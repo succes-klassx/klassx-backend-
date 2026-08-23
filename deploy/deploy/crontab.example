@@ -1,0 +1,33 @@
+# KLASSX scheduled jobs — example crontab, one line per job at its ideal
+# frequency (lower server load than running everything every 5 minutes
+# via `run_scheduled_jobs`, see that command's docstring for the
+# single-command alternative — use ONE of the two approaches, not both).
+#
+# Install with:  crontab deploy/crontab.example   (after editing the path below)
+# Or merge these lines into an existing crontab with: crontab -e
+#
+# Replace /path/to/klassx_backend and venv/bin/python with your actual
+# paths. Add DJANGO_SETTINGS_MODULE / env vars here too if your cron
+# environment doesn't already load your .env (cron runs with a minimal
+# environment by default, unlike an interactive shell).
+
+# Generate next week's occurrence for each active recurring group —
+# doesn't need to run more than once a day.
+0 6 * * * cd /path/to/klassx_backend && venv/bin/python manage.py generate_series_occurrences >> /var/log/klassx/generate_series_occurrences.log 2>&1
+
+# Finalize group departures whose notice period has passed — daily.
+30 6 * * * cd /path/to/klassx_backend && venv/bin/python manage.py finalize_series_departures >> /var/log/klassx/finalize_series_departures.log 2>&1
+
+# Cancel sessions that missed their minimum-enrollment deadline — hourly.
+0 * * * * cd /path/to/klassx_backend && venv/bin/python manage.py cancel_undersubscribed_sessions >> /var/log/klassx/cancel_undersubscribed_sessions.log 2>&1
+
+# Session reminders (24h and 10min before) — needs a tight window to catch the 10-minute one.
+*/5 * * * * cd /path/to/klassx_backend && venv/bin/python manage.py send_session_reminders >> /var/log/klassx/send_session_reminders.log 2>&1
+
+# Fetch Google Meet recording links once Google finishes processing them.
+*/15 * * * * cd /path/to/klassx_backend && venv/bin/python manage.py fetch_meet_recordings >> /var/log/klassx/fetch_meet_recordings.log 2>&1
+
+# Compute teacher Payouts for the month that just ended — monthly only,
+# NOT part of run_scheduled_jobs (see that command's docstring). Mark a
+# Payout as actually paid from the Django admin once the transfer is sent.
+0 7 1 * * cd /path/to/klassx_backend && venv/bin/python manage.py compute_payouts >> /var/log/klassx/compute_payouts.log 2>&1

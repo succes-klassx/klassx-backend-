@@ -1,0 +1,15 @@
+# Secrets — never commit these
+.env
+google_credentials.json
+*.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Django
+db.sqlite3
+/media/
+/staticfiles/

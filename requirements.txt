@@ -1,0 +1,16 @@
+Django>=5.0,<6.0
+djangorestframework>=3.15
+djangorestframework-simplejwt>=5.3
+django-cors-headers>=4.4
+django-filter>=24.2
+psycopg2-binary>=2.9   # remove if you stick with SQLite
+python-dotenv>=1.0
+stripe>=10.0            # Module 3 — payment integration
+Pillow>=10.0            # ImageField (teacher photos) — required by Django for image uploads
+requests>=2.32          # Daily.co video room provisioning
+google-api-python-client>=2.140  # Google Meet — Calendar & Meet REST APIs
+google-auth>=2.34               # Google Meet — service account + domain-wide delegation
+google-auth-httplib2>=0.2       # Google Meet — HTTP transport used by the API client
+google-auth-oauthlib>=1.2       # Google Meet — OAuth fallback (get_google_oauth_token command)
+gunicorn>=22.0          # serveur WSGI de prod — remplace `manage.py runserver`, pas fait pour tenir du trafic réel
+whitenoise>=6.7          # sert les fichiers statiques (CSS/JS admin, etc.) directement depuis Django en prod
