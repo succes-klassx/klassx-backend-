@@ -37,6 +37,7 @@ urlpatterns = [
     # Landing page (public, unauthenticated) — see PublicTeacherSerializer /
     # FAQViewSet / StaticPageDetailView.
     path("public/teachers/", views.PublicTeachersView.as_view(), name="public-teachers"),
+    path("public/teachers/<int:pk>/", views.PublicTeacherDetailView.as_view(), name="public-teacher-detail"),
     path("public/pricing/", views.PublicPricingView.as_view(), name="public-pricing"),
     path("public/pages/<slug:slug>/", views.StaticPageDetailView.as_view(), name="public-page"),
     path("public/newsletter/", views.PublicNewsletterSubscribeView.as_view(), name="public-newsletter"),

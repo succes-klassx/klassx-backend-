@@ -38,7 +38,7 @@ from .serializers import (
     AffiliateRegistrationSerializer, ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
     ForumReplySerializer, ForumThreadSerializer, GroupAnnouncementSerializer,
     GroupAssignmentSerializer, GroupRequestSerializer,
-    IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PublicTeacherSerializer,
+    IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PublicTeacherDetailSerializer, PublicTeacherSerializer,
     SeriesMembershipSerializer, StaticPageSerializer, StudentRegistrationSerializer,
     StudentSpecialtiesUpdateSerializer, SubjectSerializer,
     TeacherProfileSerializer, TeacherRegistrationSerializer,
@@ -2074,6 +2074,13 @@ class KonnectWebhookView(APIView):
 class PublicTeachersView(generics.ListAPIView):
     """GET /api/public/teachers/ — featured, approved teachers for the landing page's "Nos enseignants experts" section."""
     serializer_class = PublicTeacherSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = TeacherProfile.objects.filter(is_active=True, is_featured=True).select_related("user", "subject")
+
+
+class PublicTeacherDetailView(generics.RetrieveAPIView):
+    """GET /api/public/teachers/<id>/ — full profile for one teacher's detail page (see TeacherDetail.jsx). Same visibility rule as the list — only active, featured teachers are reachable, so a card always links to a resolvable page."""
+    serializer_class = PublicTeacherDetailSerializer
     permission_classes = [permissions.AllowAny]
     queryset = TeacherProfile.objects.filter(is_active=True, is_featured=True).select_related("user", "subject")
 

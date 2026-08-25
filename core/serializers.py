@@ -944,6 +944,21 @@ class PublicTeacherSerializer(serializers.ModelSerializer):
         fields = ["id", "full_name", "photo", "subject_name", "title_degree", "bio_short"]
 
 
+class PublicTeacherDetailSerializer(serializers.ModelSerializer):
+    """
+    Fiche détaillée d'un enseignant (voir PublicTeacherDetailView) — mêmes
+    champs que PublicTeacherSerializer, plus la biographie complète
+    (`bio`), volontairement absente de la carte/liste pour ne pas
+    l'alourdir.
+    """
+    full_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True)
+
+    class Meta:
+        model = TeacherProfile
+        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "bio_short", "bio"]
+
+
 class FAQSerializer(serializers.ModelSerializer):
     class Meta:
         model = FAQ
