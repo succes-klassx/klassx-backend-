@@ -726,12 +726,14 @@ class GroupRequestSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source="subject.name", read_only=True)
     weekly_hours_display = serializers.CharField(source="get_weekly_hours_display", read_only=True)
     resulting_enrollment_detail = EnrollmentSerializer(source="resulting_enrollment", read_only=True)
+    preferred_teacher_name = serializers.CharField(source="preferred_teacher.user.get_full_name", read_only=True)
 
     class Meta:
         model = GroupRequest
         fields = [
             "id", "student", "subject", "subject_name", "level", "group_tier", "weekly_hours", "weekly_hours_display",
-            "status", "group_assignment", "resulting_enrollment", "resulting_enrollment_detail", "created_at",
+            "status", "group_assignment", "resulting_enrollment", "resulting_enrollment_detail",
+            "preferred_teacher", "preferred_teacher_name", "created_at",
         ]
         read_only_fields = ["student", "status", "group_assignment", "resulting_enrollment", "created_at"]
 
@@ -833,6 +835,10 @@ class IndividualBookingSerializer(serializers.Serializer):
     level = serializers.ChoiceField(choices=Subject.Level.choices)
     start_time = serializers.DateTimeField()
     end_time = serializers.DateTimeField()
+    # Facultatif — voir ClassSession.preferred_teacher.
+    preferred_teacher = serializers.PrimaryKeyRelatedField(
+        queryset=TeacherProfile.objects.all(), required=False, allow_null=True
+    )
 
     def validate(self, attrs):
         if attrs["end_time"] <= attrs["start_time"]:

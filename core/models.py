@@ -613,6 +613,16 @@ class GroupRequest(models.Model):
     group_tier = models.CharField(max_length=12, choices=GroupTier.choices)
     weekly_hours = models.PositiveSmallIntegerField(choices=WeeklyHours.choices, null=True, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    # Optional — set when the student clicked "Réserver un cours avec
+    # <nom>" from that teacher's public profile page (see
+    # TeacherDetail.jsx), so an admin knows there's a preference before
+    # assigning a teacher via AdminAssignGroupView. Purely informational:
+    # nothing here auto-assigns the teacher, and this field stays null
+    # for the (still more common) case of a student who just picked a
+    # subject/level without visiting a specific teacher's page first.
+    preferred_teacher = models.ForeignKey(
+        "TeacherProfile", on_delete=models.SET_NULL, null=True, blank=True, related_name="preferred_by_requests"
+    )
     # Set once an admin bundles this request into a formed group and
     # assigns a teacher to it (see AdminAssignGroupView) — the teacher then
     # picks the actual schedule from their dashboard (see
@@ -849,6 +859,14 @@ class ClassSession(models.Model):
 
     assigned_teacher = models.ForeignKey(
         TeacherProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_sessions"
+    )
+    # Optional — set on an INDIVIDUAL session when the student clicked
+    # "Réserver un cours avec <nom>" from that teacher's public profile
+    # page (see TeacherDetail.jsx / IndividualBookingSerializer). Same
+    # spirit as GroupRequest.preferred_teacher: purely informational for
+    # whoever assigns assigned_teacher above, never auto-assigned.
+    preferred_teacher = models.ForeignKey(
+        TeacherProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name="preferred_by_sessions"
     )
     series = models.ForeignKey(ClassSeries, on_delete=models.CASCADE, null=True, blank=True, related_name="occurrences")
     # Set when this session was created via the autonomous scheduling flow

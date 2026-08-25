@@ -205,8 +205,8 @@ class SeriesMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(ClassSession)
 class ClassSessionAdmin(admin.ModelAdmin):
-    list_display = ["subject", "level", "group_tier", "start_time", "status", "assigned_teacher"]
-    list_filter = ["status", "group_tier", "level", "subject"]
+    list_display = ["subject", "level", "group_tier", "start_time", "status", "assigned_teacher", "preferred_teacher"]
+    list_filter = ["status", "group_tier", "level", "subject", "preferred_teacher"]
 
     def save_model(self, request, obj, form, change):
         """
@@ -286,8 +286,8 @@ class GroupRequestAdmin(admin.ModelAdmin):
     form a group (see the AdminAssignGroupView API action, exposed on the
     frontend admin dashboard).
     """
-    list_display = ["student", "subject", "level", "group_tier", "weekly_hours", "status", "created_at"]
-    list_filter = ["status", "subject", "level", "group_tier", "weekly_hours"]
+    list_display = ["student", "subject", "level", "group_tier", "weekly_hours", "preferred_teacher", "status", "created_at"]
+    list_filter = ["status", "subject", "level", "group_tier", "weekly_hours", "preferred_teacher"]
     ordering = ["subject", "level", "group_tier", "created_at"]
 
 

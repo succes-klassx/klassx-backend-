@@ -821,7 +821,7 @@ class IndividualBookingView(APIView):
         session = ClassSession.objects.create(
             subject=data["subject"], level=data["level"], group_tier=ClassSession.GroupTier.INDIVIDUAL,
             max_capacity=1, start_time=data["start_time"], end_time=data["end_time"],
-            status=ClassSession.Status.SCHEDULED,
+            status=ClassSession.Status.SCHEDULED, preferred_teacher=data.get("preferred_teacher"),
         )
         enrollment = Enrollment.objects.create(student=request.user, class_session=session)
         notifications.send_enrollment_confirmed(enrollment)
