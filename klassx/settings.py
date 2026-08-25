@@ -116,9 +116,25 @@ ASGI_APPLICATION = "klassx.asgi.application"
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-# Defaults to SQLite for local development. Set the DATABASE_* env vars
-# (or a DATABASE_URL) to point to PostgreSQL in staging/production.
-if os.environ.get("DATABASE_NAME"):
+# Defaults to SQLite for local development. On Render (and most other
+# hosts), the filesystem is wiped on every redeploy — so without a real
+# database configured here, every deploy silently resets to an empty
+# SQLite file and any data added since the last deploy (admin edits, real
+# signups, payments...) is lost. Two ways to point this at PostgreSQL:
+#   1. DATABASE_URL — a single connection string, e.g.
+#      postgres://user:password@host:port/dbname (this is what Render's
+#      "Internal Database URL" gives you when you create a Postgres
+#      instance — the simplest option).
+#   2. DATABASE_NAME/USER/PASSWORD/HOST/PORT — the same thing split into
+#      separate variables, for hosts that don't provide a single URL.
+# DATABASE_URL takes priority if both are set.
+if os.environ.get("DATABASE_URL"):
+    import dj_database_url
+
+    DATABASES = {
+        "default": dj_database_url.parse(os.environ["DATABASE_URL"], conn_max_age=600)
+    }
+elif os.environ.get("DATABASE_NAME"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
