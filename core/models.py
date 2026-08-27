@@ -586,26 +586,21 @@ class GroupRequest(models.Model):
         GROUP_2 = "GROUP_2", "Group of 2"
         INDIVIDUAL = "INDIVIDUAL", "Individual"
 
-    # Weekly-hour packages (spec: confirmed with product owner — replaces
-    # official-curriculum-hours pricing for specialty subjects). Only
+    # Monthly hour packages (spec: confirmed with product owner). Only
     # meaningful for group tiers; INDIVIDUAL has no package — it's pay-per-
     # session with no commitment and never goes through this request flow
     # at all (see IndividualBookingSerializer).
     #
-    # H1/H2 are stored as weekly hours (1h/semaine, 2h/semaine — what
-    # actually gets scheduled as the recurring slot) but *labelled* by
-    # their monthly total instead, since "4h/mois"/"8h/mois" reads more
-    # naturally at that size than "1h/semaine" — same underlying billing
-    # math either way (weekly_hours x 4 = monthly total). See
-    # core/pricing.py: WEEKLY_HOURS_LABELS.
+    # The value stored here is the package's TOTAL MONTHLY hours (not
+    # weekly) — see GroupAssignmentSerializer.get_target_weekly_minutes,
+    # which divides by 4 to get the actual weekly scheduling target. See
+    # also core/pricing.py: WEEKLY_HOURS_LABELS.
     class WeeklyHours(models.IntegerChoices):
-        H1 = 1, "4h/mois"
-        H2 = 2, "8h/mois"
-        H6 = 6, "6h/semaine"
-        H8 = 8, "8h/semaine"
-        H12 = 12, "12h/semaine"
-        H16 = 16, "16h/semaine"
-        H24 = 24, "24h/semaine"
+        H4 = 4, "1h/semaine (4h/mois)"
+        H6 = 6, "1,5h/semaine (6h/mois)"
+        H8 = 8, "2h/semaine (8h/mois)"
+        H12 = 12, "3h/semaine (12h/mois)"
+        H16 = 16, "4h/semaine (16h/mois)"
 
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="group_requests")
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name="group_requests")

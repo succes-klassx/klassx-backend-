@@ -746,7 +746,7 @@ class GroupRequestSerializer(serializers.ModelSerializer):
 
         if not weekly_hours:
             raise serializers.ValidationError(
-                {"weekly_hours": "Choisissez un forfait (4h/mois, 8h/mois, 6h, 8h, 12h, 16h ou 24h/semaine)."}
+                {"weekly_hours": "Choisissez un forfait (1h, 1,5h, 2h, 3h ou 4h/semaine)."}
             )
         if weekly_hours not in WEEKLY_HOURS_PACKAGES:
             raise serializers.ValidationError(
@@ -810,7 +810,10 @@ class GroupAssignmentSerializer(serializers.ModelSerializer):
         ]
 
     def get_target_weekly_minutes(self, obj):
-        return obj.weekly_hours * 60 if obj.weekly_hours else None
+        # weekly_hours is a MONTHLY total (see GroupRequest.WeeklyHours) —
+        # divide by 4 to get the weekly scheduling target this compares
+        # scheduled_weekly_minutes against.
+        return round(obj.weekly_hours * 60 / 4) if obj.weekly_hours else None
 
     def get_scheduled_weekly_minutes(self, obj):
         return sum(s.duration_minutes for s in obj.class_series.all())

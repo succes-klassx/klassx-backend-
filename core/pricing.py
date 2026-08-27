@@ -112,16 +112,14 @@ SESSIONS_PER_MONTH = 4
 # WEEKLY_HOURS_LABELS (or GroupRequest.get_weekly_hours_display() on the
 # backend) to display a package — never hand-build a "Xh/semaine" string
 # from the raw value, since that breaks for these two.
-WEEKLY_HOURS_PACKAGES = [1, 2, 6, 8, 12, 16, 24]
+WEEKLY_HOURS_PACKAGES = [4, 6, 8, 12, 16]
 
 WEEKLY_HOURS_LABELS = {
-    1: "4h/mois",
-    2: "8h/mois",
-    6: "6h/semaine",
-    8: "8h/semaine",
-    12: "12h/semaine",
-    16: "16h/semaine",
-    24: "24h/semaine",
+    4: "1h/semaine (4h/mois)",
+    6: "1,5h/semaine (6h/mois)",
+    8: "2h/semaine (8h/mois)",
+    12: "3h/semaine (12h/mois)",
+    16: "4h/semaine (16h/mois)",
 }
 
 
