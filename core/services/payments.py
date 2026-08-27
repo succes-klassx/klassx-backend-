@@ -123,7 +123,7 @@ def create_enrollment_checkout_session(enrollment, unit_amount_cents, currency="
     return session
 
 
-def create_subscription_checkout_session(user, plan):
+def create_subscription_checkout_session(user, plan, unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a self-study content
     subscription (spec: videos + PDF, no teacher — see
@@ -134,6 +134,9 @@ def create_subscription_checkout_session(user, plan):
     prices, and building them inline means changing a price in the admin
     (SelfStudyPlan.price_cents) takes effect immediately, no Stripe
     dashboard step required.
+
+    `unit_amount_cents_override`: pass a discounted amount (see
+    core/discounts.py) to charge that instead of plan.price_cents as-is.
     """
     session = stripe.checkout.Session.create(
         mode="subscription",
@@ -142,7 +145,7 @@ def create_subscription_checkout_session(user, plan):
         line_items=[{
             "price_data": {
                 "currency": "eur",
-                "unit_amount": plan.price_cents,
+                "unit_amount": unit_amount_cents_override if unit_amount_cents_override is not None else plan.price_cents,
                 "recurring": {"interval": "month"},
                 "product_data": {"name": f"KLASSX — {plan.name}"},
             },
@@ -155,13 +158,18 @@ def create_subscription_checkout_session(user, plan):
     return session
 
 
-def create_series_subscription_checkout_session(membership):
+def create_series_subscription_checkout_session(membership, unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a student's monthly subscription
     to a fixed recurring group (spec: pay monthly, auto-renews, 2 weeks'
     notice to leave). Unlike the video capsule subscription, the price
     varies per group (tier x session length), so it's built with
     `price_data.recurring` rather than a pre-created Stripe Price object.
+
+    `unit_amount_cents_override`: pass a discounted amount (see
+    core/discounts.py — only the global discount applies here, there's
+    no promo-code entry point in the group flow) to charge that instead
+    of membership.monthly_price_cents as-is.
     """
     series = membership.series
     session = stripe.checkout.Session.create(
@@ -171,7 +179,7 @@ def create_series_subscription_checkout_session(membership):
         line_items=[{
             "price_data": {
                 "currency": "eur",
-                "unit_amount": membership.monthly_price_cents,
+                "unit_amount": unit_amount_cents_override if unit_amount_cents_override is not None else membership.monthly_price_cents,
                 "recurring": {"interval": "month"},
                 "product_data": {
                     "name": f"{series.subject.name} — {series.get_group_tier_display()} — groupe hebdomadaire",

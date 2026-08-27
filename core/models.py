@@ -1268,3 +1268,48 @@ class NewsletterSubscriber(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class GlobalDiscount(models.Model):
+    """
+    Rabais en pourcentage appliqué à TOUS les forfaits (groupe,
+    individuel, contenu autonome) — activé/désactivé et réglé depuis
+    /admin par un admin. Toujours une seule ligne en base (singleton,
+    voir save() ci-dessous) ; se cumule avec un code promo si l'élève en
+    utilise un en plus — voir core/discounts.py.
+    """
+    percentage = models.PositiveSmallIntegerField(default=0, help_text="0 à 100.")
+    is_active = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1  # force le singleton — toujours la même ligne, jamais de doublon
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Rabais global : {self.percentage}% ({'actif' if self.is_active else 'inactif'})"
+
+
+class PromoCode(models.Model):
+    """
+    Code promo qu'un élève tape lui-même au moment de payer une
+    réservation individuelle ou un abonnement contenu autonome. Se
+    cumule avec le rabais global s'il y en a un actif — voir
+    core/discounts.py: apply_discounts(). L'utilisation (`times_used`)
+    n'est comptée que si le code a bien été appliqué à un paiement créé
+    avec succès — pas juste "tapé" sans aller au bout.
+    """
+    code = models.CharField(max_length=32, unique=True)
+    percentage = models.PositiveSmallIntegerField(help_text="1 à 100.")
+    is_active = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(null=True, blank=True, help_text="Laisser vide pour ne jamais expirer.")
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text="Laisser vide pour un nombre illimité d'utilisations.")
+    times_used = models.PositiveIntegerField(default=0, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        self.code = self.code.strip().upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.code

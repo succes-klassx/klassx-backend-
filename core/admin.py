@@ -6,8 +6,8 @@ import logging
 
 from .models import (
     ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
-    GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
-    Payout, PricingRate, ReferralCommission, SeriesMembership, StaticPage,
+    GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
+    Payout, PricingRate, PromoCode, ReferralCommission, SeriesMembership, StaticPage,
     SelfStudyContentItem, SelfStudyPlan, StudentProfile, Subject, Subscription, TeacherAvailability, TeacherProfile,
     TeacherSubject, User, VideoProgress,
 )
@@ -383,3 +383,33 @@ class NewsletterSubscriberAdmin(admin.ModelAdmin):
     search_fields = ["email"]
     readonly_fields = ["subscribed_at"]
     ordering = ["-subscribed_at"]
+
+
+@admin.register(GlobalDiscount)
+class GlobalDiscountAdmin(admin.ModelAdmin):
+    """
+    Un seul rabais global existe jamais (voir GlobalDiscount.save — force
+    toujours la même ligne) : coche "Is active" et choisis le pourcentage
+    pour l'appliquer partout (tarifs de groupe affichés, réservation
+    individuelle, abonnement contenu autonome) ; décoche pour le retirer
+    sans perdre le pourcentage réglé.
+    """
+    list_display = ["percentage", "is_active", "updated_at"]
+    readonly_fields = ["updated_at"]
+
+    def has_add_permission(self, request):
+        # Un seul rabais global peut exister — pas de bouton "Ajouter"
+        # une fois la ligne unique déjà créée (voir GlobalDiscount.save).
+        return not GlobalDiscount.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PromoCode)
+class PromoCodeAdmin(admin.ModelAdmin):
+    """Codes promo que les élèves tapent eux-mêmes au paiement (réservation individuelle, contenu autonome)."""
+    list_display = ["code", "percentage", "is_active", "expires_at", "max_uses", "times_used"]
+    list_filter = ["is_active"]
+    search_fields = ["code"]
+    readonly_fields = ["times_used", "created_at"]

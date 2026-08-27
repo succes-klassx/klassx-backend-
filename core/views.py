@@ -46,6 +46,7 @@ from .serializers import (
     VideoProgressSerializer,
 )
 from .services import brevo, google_meet, konnect, notifications, payments, video
+from . import discounts
 from .services.referrals import REFERRAL_COMMISSION_RATE
 
 # Utilisé pour les créations de salle vidéo (Google Meet/Daily/Jitsi) qui
@@ -728,6 +729,11 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
             )
         amount_cents = session_price_cents(enrollment.class_session)
 
+        try:
+            amount_cents, promo = discounts.apply_discounts(amount_cents, request.data.get("promo_code"))
+        except discounts.InvalidPromoCode as exc:
+            return Response({"detail": str(exc), "code": "invalid_promo_code"}, status=status.HTTP_400_BAD_REQUEST)
+
         if enrollment.student.country == "Tunisie":
             # Pas de compte marchand Konnect confirmé — paiement 100%
             # manuel pour la Tunisie (virement bancaire direct, aucun
@@ -748,6 +754,7 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
+        discounts.record_promo_code_use(promo)
         Payment.objects.create(
             user=enrollment.student, enrollment=enrollment,
             amount=amount_cents / 100, stripe_checkout_session_id=checkout_session.id,
@@ -844,10 +851,15 @@ class IndividualBookingView(APIView):
 
         amount_cents = session_price_cents(session)
         try:
+            amount_cents, promo = discounts.apply_discounts(amount_cents, request.data.get("promo_code"))
+        except discounts.InvalidPromoCode as exc:
+            return Response({"detail": str(exc), "code": "invalid_promo_code"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
             checkout_session = payments.create_enrollment_checkout_session(enrollment, amount_cents)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
+        discounts.record_promo_code_use(promo)
         Payment.objects.create(
             user=request.user, enrollment=enrollment,
             amount=amount_cents / 100, stripe_checkout_session_id=checkout_session.id,
@@ -1010,8 +1022,9 @@ class GroupAssignmentViewSet(viewsets.ReadOnlyModelViewSet):
         Teacher-only: adds one or more weekly recurring slots to this
         group's package (each becomes its own ClassSeries), enrolling
         every student in the group into all of them. `weekly_hours` is the
-        package's TOTAL weekly commitment — most packages need MORE THAN
-        ONE slot to reach it (e.g. 8h/semaine = Monday 4h + Thursday 4h),
+        package's TOTAL MONTHLY commitment — divide by 4 for the weekly
+        target (e.g. 12h/mois ≈ 3h/semaine), which may need MORE THAN
+        ONE slot to reach (e.g. Monday 1h30 + Thursday 1h30),
         so **this can be called more than once**: the first call moves
         the group from "awaiting schedule" to "scheduled", and later calls
         just add more slots the same way (e.g. if the teacher only decided
@@ -1367,8 +1380,11 @@ class SeriesMembershipViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
+        # Seul le rabais global s'applique ici (pas de code promo — voir
+        # payments.create_series_subscription_checkout_session).
+        amount_cents, _ = discounts.apply_discounts(membership.monthly_price_cents)
         try:
-            checkout_session = payments.create_series_subscription_checkout_session(membership)
+            checkout_session = payments.create_series_subscription_checkout_session(membership, unit_amount_cents_override=amount_cents)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"checkout_url": checkout_session.url})
@@ -1838,9 +1854,14 @@ class SubscriptionCheckoutView(APIView):
             )
 
         try:
-            checkout_session = payments.create_subscription_checkout_session(request.user, plan)
+            amount_cents, promo = discounts.apply_discounts(plan.price_cents, request.data.get("promo_code"))
+        except discounts.InvalidPromoCode as exc:
+            return Response({"detail": str(exc), "code": "invalid_promo_code"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            checkout_session = payments.create_subscription_checkout_session(request.user, plan, unit_amount_cents_override=amount_cents)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        discounts.record_promo_code_use(promo)
         return Response({"checkout_url": checkout_session.url})
 
 
@@ -2111,11 +2132,18 @@ class PublicPricingView(APIView):
 
     def get(self, request):
         from .pricing import rate_per_hour_cents, rate_per_hour_tnd
+        discount_pct = discounts.get_global_discount_percent()
+        factor = (1 - discount_pct / 100) if discount_pct else 1
         return Response([
             {
                 "group_tier": tier, "group_tier_display": label,
-                "price_per_hour_eur": rate_per_hour_cents(tier) / 100,
-                "price_per_hour_tnd": rate_per_hour_tnd(tier),
+                "price_per_hour_eur": rate_per_hour_cents(tier) / 100 * factor,
+                "price_per_hour_tnd": rate_per_hour_tnd(tier) * factor,
+                # Prix plein, pour un affichage barré côté frontend — absents
+                # (donc identiques au prix ci-dessus) si aucun rabais actif.
+                "original_price_per_hour_eur": rate_per_hour_cents(tier) / 100,
+                "original_price_per_hour_tnd": rate_per_hour_tnd(tier),
+                "discount_percentage": discount_pct,
             }
             for tier, label in self.TIERS
         ])
@@ -2153,3 +2181,25 @@ class PublicNewsletterSubscribeView(APIView):
                 logger.exception("Échec de la synchronisation Brevo pour %s", email)
 
         return Response({"email": email}, status=status.HTTP_201_CREATED)
+
+
+class PublicValidatePromoCodeView(APIView):
+    """
+    POST /api/public/promo-codes/validate/ — {"code": "..."} — vérifie
+    un code avant de payer, pour afficher "-20%" côté élève sans encore
+    créer de paiement. N'incrémente PAS l'usage du code (voir
+    core/discounts.py: record_promo_code_use, appelé seulement après un
+    paiement réellement créé) — un élève peut valider le même code
+    plusieurs fois sans le consommer.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        code = request.data.get("code", "")
+        try:
+            promo = discounts.get_valid_promo_code(code)
+        except discounts.InvalidPromoCode as exc:
+            return Response({"valid": False, "detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if promo is None:
+            return Response({"valid": False, "detail": "Code manquant."}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"valid": True, "percentage": promo.percentage})
