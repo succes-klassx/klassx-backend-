@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('core', '0011_alter_grouprequest_weekly_hours_labels'),
+        ('core', '0011_merge_20260827_1214'),
     ]
 
     operations = [
