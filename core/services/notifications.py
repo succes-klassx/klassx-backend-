@@ -6,14 +6,26 @@ needs EMAIL_* settings changed to send real emails via SMTP/SendGrid/etc.
 SMS and in-app notifications aren't implemented — the spec left the channel
 choice open (5.6), this covers the email channel as a starting point.
 """
+import logging
+
 from django.conf import settings
 from django.core.mail import send_mail
+
+logger = logging.getLogger(__name__)
 
 
 def _send(to_email, subject, message):
     if not to_email:
         return
-    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [to_email], fail_silently=True)
+    # fail_silently=False + le try/except : un échec SMTP ne doit jamais
+    # faire planter l'inscription/le mot de passe oublié pour l'élève,
+    # mais on veut voir l'erreur exacte dans les logs Render (Shell non
+    # disponible sur le plan gratuit) au lieu qu'elle disparaisse
+    # silencieusement — c'était le cas avant avec fail_silently=True.
+    try:
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [to_email], fail_silently=False)
+    except Exception:
+        logger.exception("Échec de l'envoi d'email à %s (sujet: %s)", to_email, subject)
 
 
 def send_enrollment_confirmed(enrollment):
