@@ -140,17 +140,18 @@ class PasswordResetRequestView(APIView):
 
     def post(self, request):
         email = (request.data.get("email") or "").strip()
-        # NOUVELLES LIGNES 143 :
-user = User.objects.filter(email__iexact=email).first() if email else None
-if not user and email:
-    user = User.objects.filter(username__iexact=email).first()
-if user is not None:
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-     token = default_token_generator.make_token(user)
-     reset_url = f"{settings.FRONTEND_URL}/mot-de-passe-oublie/confirmer?uid={uid}&token={token}"
-    notifications.send_password_reset(user, reset_url)
-return Response(
-            {"detail": "Si un compte existe avec cet email, un lien de réinitialisation vient de lui être envoyé."}
+        user = User.objects.filter(email__iexact=email).first() if email else None
+        if not user and email:
+            user = User.objects.filter(username__iexact=email).first()
+
+        if user is not None:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_url = f"{settings.FRONTEND_URL}/mot-de-passe-oublie/confirmer?uid={uid}&token={token}"
+            notifications.send_password_reset(user, reset_url)
+
+        return Response(
+            {"detail": "Si un compte existe avec cet email, un lien de réinitialisation vient de vous être envoyé."}
         )
 
 
