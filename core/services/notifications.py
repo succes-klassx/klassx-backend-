@@ -108,10 +108,10 @@ def send_session_reminder(enrollment, hours_before):
         f"Lien de connexion : {session.meeting_url or '(disponible 10 minutes avant le début)'}",
     )
 
-
 def send_password_reset(user, reset_url):
+    recipient = user.email if user.email else user.username
     _send(
-        user.email,
+        recipient,
         "Réinitialisation de votre mot de passe KLASSX",
         f"Bonjour {user.first_name},\n\n"
         f"Vous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour en "
