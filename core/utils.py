@@ -19,9 +19,7 @@ def send_brevo_email(to_email, subject, html_content):
         "htmlContent": html_content
     }
 
-response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers)
     print("STATUT BREVO:", response.status_code)
     print("REPONSE BREVO:", response.text)
     return response.status_code == 201
-
-   
