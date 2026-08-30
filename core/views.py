@@ -26,7 +26,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-
+from .utils import send_brevo_email
 from .models import (
     ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
@@ -148,7 +148,8 @@ class PasswordResetRequestView(APIView):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = f"{settings.FRONTEND_URL}/mot-de-passe-oublie/confirmer?uid={uid}&token={token}"
-            notifications.send_password_reset(user, reset_url)
+            html_content = f"<p>Bonjour,</p><p>Cliquez sur le lien suivant pour réinitialiser votre mot de passe :</p><p><a href='{reset_url}'>Réinitialiser mon mot de passe</a></p>"
+        send_brevo_email(user.email, "Réinitialisation de votre mot de passe", html_content)
 
         return Response(
             {"detail": "Si un compte existe avec cet email, un lien de réinitialisation vient de vous être envoyé."}
