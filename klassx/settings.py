@@ -301,14 +301,13 @@ BREVO_NEWSLETTER_LIST_ID = os.environ.get("BREVO_NEWSLETTER_LIST_ID", "")
 # Defaults to printing emails to the console — zero setup for local dev.
 # Set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend and the
 # Configuration SMTP Brevo directe avec valeurs par défaut
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST') or 'smtp-relay.brevo.com'
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@klassx.cloud")
-
+DEFAULT_FROM_EMAIL = 'contrat@klassx.cloud'
 # ---------------------------------------------------------------------------
 # Video conferencing — provider priority is Google Meet > Daily.co > Jitsi.
 # See core/services/video.py and core/services/google_meet.py.
