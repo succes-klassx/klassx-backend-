@@ -282,7 +282,7 @@ KONNECT_SANDBOX = os.environ.get("KONNECT_SANDBOX", "True") == "True"
 # "Marquer comme payé"). L'intégration Konnect ci-dessus reste dans le code
 # mais n'est plus appelée pour la Tunisie (voir EnrollmentViewSet
 # .create_checkout_session / SeriesMembershipViewSet.checkout).
-CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "succes@reussir-mon-bac.com")
+CONTACT_EMAIL = os.environ.get("CONTACT_EMAIL", "contact@klassx.cloud")
 
 # ---------------------------------------------------------------------------
 # Brevo (ex-Sendinblue) — inscription à la newsletter depuis le footer de la
@@ -307,7 +307,11 @@ EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = 'contrat@klassx.cloud'
+# Corrigé : était codé en dur ('contrat@klassx.cloud' — faute de frappe
+# + ignorait complètement EMAIL_* du .env/Render). Lit maintenant la
+# variable d'environnement comme les autres réglages email juste
+# au-dessus, avec la bonne adresse en repli si elle n'est pas définie.
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "KLASSX <contact@klassx.cloud>")
 # ---------------------------------------------------------------------------
 # Video conferencing — provider priority is Google Meet > Daily.co > Jitsi.
 # See core/services/video.py and core/services/google_meet.py.
