@@ -918,13 +918,20 @@ class ClassSession(models.Model):
 
 class WhiteboardSnapshot(models.Model):
     """
-    L'état sauvegardé du tableau blanc interactif (dessin, pages, PDF
-    importé) pour UNE séance précise — voir tableau-lecons-3.html côté
-    frontend, servi en iframe. Une ligne par ClassSession (OneToOne) :
-    contrairement à Material (documents que l'enseignant partage), ceci
-    est le contenu que l'enseignant ET les élèves produisent ENSEMBLE
-    pendant la séance elle-même, sauvegardé pour rester consultable après
-    coup — spec confirmée : pas éphémère.
+    L'état sauvegardé du tableau blanc interactif — voir
+    tableau-lecons-3.html côté frontend, servi en iframe. Soit lié à UNE
+    séance précise (`class_session`, le cas normal — enseignant ET élèves
+    inscrits à cette séance y accèdent ensemble), soit un tableau
+    personnel de découverte (`user`, sans séance) — jamais les deux à la
+    fois sur la même ligne (voir contrainte ci-dessous).
+
+    Le tableau personnel (`user`) sert à laisser un élève essayer la
+    fonctionnalité avant d'avoir payé une vraie séance (argument
+    marketing), limité aux 14 premiers jours suivant son inscription —
+    voir ClassSessionViewSet côté vues, qui applique cette limite
+    uniquement aux élèves (les enseignants gardent un accès permanent à
+    leur propre tableau personnel, sans limite de temps : ce ne sont pas
+    des prospects à convaincre).
 
     `pages` est la sérialisation JSON telle que produite par le tableau
     JS lui-même (liste de pages, chacune avec ses traits et son éventuel
@@ -933,12 +940,30 @@ class WhiteboardSnapshot(models.Model):
     côté serveur), toute la logique de rendu reste dans le JS du
     tableau.
     """
-    class_session = models.OneToOneField(ClassSession, on_delete=models.CASCADE, related_name="whiteboard")
+    class_session = models.OneToOneField(
+        ClassSession, on_delete=models.CASCADE, related_name="whiteboard", null=True, blank=True
+    )
+    # Tableau personnel de découverte, sans séance — voir docstring.
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="personal_whiteboard",
+        null=True, blank=True,
+    )
     pages = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    models.Q(class_session__isnull=False, user__isnull=True)
+                    | models.Q(class_session__isnull=True, user__isnull=False)
+                ),
+                name="whiteboard_exactly_one_of_session_or_user",
+            )
+        ]
+
     def __str__(self):
-        return f"Tableau — {self.class_session}"
+        return f"Tableau — {self.class_session or self.user}"
 
 
 class Material(models.Model):

@@ -32,6 +32,7 @@ urlpatterns = [
     path("me/referrals/", views.MyReferralsView.as_view(), name="me-referrals"),
     path("me/teacher-hours/", views.MyTeacherHoursView.as_view(), name="me-teacher-hours"),
     path("me/specialties/", views.MySpecialtiesView.as_view(), name="me-specialties"),
+    path("me/whiteboard/", views.MyWhiteboardView.as_view(), name="me-whiteboard"),
     path("me/payment-method/setup/", views.PaymentMethodSetupView.as_view(), name="payment-method-setup"),
 
     # Landing page (public, unauthenticated) — see PublicTeacherSerializer /

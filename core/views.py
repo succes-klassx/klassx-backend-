@@ -272,6 +272,53 @@ class MySpecialtiesView(generics.UpdateAPIView):
         return Response(UserSerializer(request.user).data)
 
 
+class MyWhiteboardView(APIView):
+    """
+    GET/PUT /api/me/whiteboard/ — le tableau blanc PERSONNEL de
+    l'utilisateur connecté, sans lien avec une séance précise (voir
+    WhiteboardSnapshot.user) — sert d'argument marketing pour qu'un élève
+    découvre la fonctionnalité avant d'avoir payé une vraie séance.
+
+    - Élève : accessible uniquement pendant les 14 jours suivant son
+      inscription (spec confirmée : "2 semaines pour se faire une idée")
+      — passé ce délai, 403 avec un message clair plutôt qu'une
+      disparition silencieuse du bouton.
+    - Enseignant : accès permanent, sans limite de temps — ce sont des
+      partenaires déjà engagés, pas des prospects à convaincre.
+    - Connexion obligatoire dans les deux cas (IsAuthenticated) — jamais
+      d'accès anonyme, quel que soit le rôle.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    TRIAL_DAYS = 14
+
+    def _check_access(self, user):
+        if user.role == "teacher":
+            return
+        if user.role == "student":
+            trial_ends = user.date_joined + timedelta(days=self.TRIAL_DAYS)
+            if timezone.now() <= trial_ends:
+                return
+            raise PermissionDenied(
+                f"Votre période d'essai du tableau ({self.TRIAL_DAYS} jours après l'inscription) est terminée."
+            )
+        raise PermissionDenied("Le tableau personnel n'est pas disponible pour ce type de compte.")
+
+    def get(self, request):
+        self._check_access(request.user)
+        snapshot, _ = WhiteboardSnapshot.objects.get_or_create(user=request.user)
+        return Response({"pages": snapshot.pages, "updated_at": snapshot.updated_at})
+
+    def put(self, request):
+        self._check_access(request.user)
+        pages = request.data.get("pages")
+        if not isinstance(pages, list):
+            return Response({"detail": "pages must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+        snapshot, _ = WhiteboardSnapshot.objects.get_or_create(user=request.user)
+        snapshot.pages = pages
+        snapshot.save(update_fields=["pages", "updated_at"])
+        return Response({"pages": snapshot.pages, "updated_at": snapshot.updated_at})
+
+
 class PaymentMethodSetupView(APIView):
     """
     POST /api/me/payment-method/setup/ — returns a Stripe Checkout URL
