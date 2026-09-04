@@ -364,7 +364,19 @@ class TeacherGoogleConnectView(APIView):
                 status=status.HTTP_501_NOT_IMPLEMENTED,
             )
 
-        state = signing.dumps(request.user.teacher_profile.id, salt=GOOGLE_TEACHER_OAUTH_STATE_SALT)
+        # PKCE (activé par défaut depuis google-auth-oauthlib 1.2) : Google
+        # exige un "code_verifier" au moment de l'échange du code, qui doit
+        # être IDENTIQUE à celui utilisé pour générer le "code_challenge"
+        # envoyé ici. Comme le callback ci-dessous reconstruit un tout
+        # nouvel objet Flow (impossible de réutiliser celui-ci d'une
+        # requête HTTP à l'autre), on fait transiter flow.code_verifier via
+        # le paramètre `state` déjà signé — sinon Google refuse l'échange
+        # avec "InvalidGrantError: Missing code verifier" (voir
+        # TeacherGoogleCallbackView, qui le relit et le réinjecte).
+        state = signing.dumps(
+            {"teacher_id": request.user.teacher_profile.id, "code_verifier": flow.code_verifier},
+            salt=GOOGLE_TEACHER_OAUTH_STATE_SALT,
+        )
         authorization_url, _ = flow.authorization_url(
             access_type="offline",
             include_granted_scopes="true",
@@ -394,17 +406,23 @@ class TeacherGoogleCallbackView(APIView):
             return redirect(f"{settings_url}?google=error")
 
         try:
-            teacher_id = signing.loads(
+            state_data = signing.loads(
                 request.GET.get("state", ""), salt=GOOGLE_TEACHER_OAUTH_STATE_SALT, max_age=600
             )
+            teacher_id = state_data["teacher_id"]
+            code_verifier = state_data["code_verifier"]
             teacher = TeacherProfile.objects.get(pk=teacher_id)
-        except (signing.BadSignature, TeacherProfile.DoesNotExist, ValueError):
+        except (signing.BadSignature, TeacherProfile.DoesNotExist, ValueError, KeyError, TypeError):
             return redirect(f"{settings_url}?google=error")
 
         try:
             from googleapiclient.discovery import build
 
             flow = _teacher_google_oauth_flow(request)
+            # Réinjecte le même code_verifier que celui utilisé pour créer
+            # le code_challenge à l'étape "connect" (voir TeacherGoogleConnectView)
+            # — sans ça, Google refuse l'échange (PKCE).
+            flow.code_verifier = code_verifier
             flow.fetch_token(code=request.GET.get("code", ""))
             credentials = flow.credentials
             email = (
