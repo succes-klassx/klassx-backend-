@@ -415,6 +415,11 @@ class TeacherGoogleCallbackView(APIView):
                 .get("email", "")
             )
         except Exception:
+            # Avant, l'erreur réelle disparaissait silencieusement ici —
+            # on ne pouvait jamais savoir POURQUOI l'échange de jeton
+            # échouait, juste que ça échouait. Maintenant loggé, visible
+            # dans les logs Render juste après une tentative.
+            logger.exception("Teacher Google OAuth callback failed for teacher_id=%s", teacher_id)
             return redirect(f"{settings_url}?google=error")
 
         if credentials.refresh_token:
