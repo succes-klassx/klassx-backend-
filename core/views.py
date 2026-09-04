@@ -22,6 +22,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import generics, permissions, status, viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -351,9 +352,17 @@ class PaymentMethodSetupView(APIView):
 # core/services/video.py for the resolution order).
 # ---------------------------------------------------------------------------
 class TeacherSettingsView(generics.RetrieveUpdateAPIView):
-    """GET/PATCH /api/teachers/me/ — the logged-in teacher's own video-link settings."""
+    """
+    GET/PATCH /api/teachers/me/ — the logged-in teacher's own video-link
+    settings AND public profile content (photo, bio, etc. — see
+    TeacherSettingsSerializer). MultiPartParser is required here because
+    `photo` is a file upload — the default JSON-only parser can't read a
+    multipart/form-data request, so a PATCH with a photo would otherwise
+    silently fail to save it (or 415 depending on how the client sent it).
+    """
     serializer_class = TeacherSettingsSerializer
     permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
         return self.request.user.teacher_profile

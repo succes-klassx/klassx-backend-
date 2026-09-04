@@ -482,17 +482,31 @@ class TeacherProfileSerializer(serializers.ModelSerializer):
 class TeacherSettingsSerializer(serializers.ModelSerializer):
     """
     The logged-in teacher's own settings — self-service video-link setup
-    for the autonomous scheduling model (see TeacherProfile). Used by
-    `GET/PATCH /api/teachers/me/`.
+    for the autonomous scheduling model (see TeacherProfile), AND leur
+    profil public (photo, bio, accroche, diplôme, matière mise en avant)
+    affiché sur la page "Nos Enseignants" si `is_featured` est coché côté
+    admin — voir PublicTeacherSerializer. `is_featured` lui-même reste
+    volontairement réservé à l'admin (c'est lui qui décide QUI est mis en
+    avant), mais le CONTENU du profil (photo, texte) est modifiable par
+    l'enseignant lui-même via GET/PATCH /api/teachers/me/ — avant ce
+    changement, aucun endroit dans l'API ne le permettait, ces champs
+    restaient vides indéfiniment tant qu'un admin ne les remplissait pas
+    à la main dans Django admin.
     """
     google_connected = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = TeacherProfile
-        fields = ["id", "default_meeting_url", "google_account_email", "google_connected"]
+        fields = [
+            "id", "default_meeting_url", "google_account_email", "google_connected",
+            "photo", "bio", "bio_short", "title_degree", "subject",
+        ]
         read_only_fields = ["id", "google_account_email"]
         # google_oauth_refresh_token is never included — it's set only by
         # TeacherGoogleCallbackView, never read or written through the API.
+        # is_active/is_featured deliberately excluded — admin-only, see
+        # TeacherProfileAdmin (approbation + mise en avant restent une
+        # décision humaine, pas du self-service).
 
 
 # ---------------------------------------------------------------------------
