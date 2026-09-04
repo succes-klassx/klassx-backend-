@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import binascii
 import logging
+import secrets
 
 import stripe
 from django.conf import settings
@@ -365,16 +366,21 @@ class TeacherGoogleConnectView(APIView):
             )
 
         # PKCE (activé par défaut depuis google-auth-oauthlib 1.2) : Google
-        # exige un "code_verifier" au moment de l'échange du code, qui doit
-        # être IDENTIQUE à celui utilisé pour générer le "code_challenge"
-        # envoyé ici. Comme le callback ci-dessous reconstruit un tout
-        # nouvel objet Flow (impossible de réutiliser celui-ci d'une
-        # requête HTTP à l'autre), on fait transiter flow.code_verifier via
-        # le paramètre `state` déjà signé — sinon Google refuse l'échange
-        # avec "InvalidGrantError: Missing code verifier" (voir
-        # TeacherGoogleCallbackView, qui le relit et le réinjecte).
+        # exige un "code_verifier" au moment de l'échange du code, identique
+        # à celui utilisé pour générer le "code_challenge" envoyé ici. On le
+        # génère et le fixe NOUS-MÊMES (plutôt que de compter sur le moment
+        # exact où la librairie le génère en interne, ce qui avait échoué
+        # une première fois — le lire trop tôt renvoyait encore None) pour
+        # être certains qu'il existe déjà à cet instant précis. On le fait
+        # ensuite transiter via `state`, signé, car le callback ci-dessous
+        # reconstruit un tout nouvel objet Flow (impossible de réutiliser
+        # celui-ci d'une requête HTTP à l'autre) — voir
+        # TeacherGoogleCallbackView, qui le relit et le réinjecte.
+        code_verifier = secrets.token_urlsafe(64)
+        flow.code_verifier = code_verifier
+
         state = signing.dumps(
-            {"teacher_id": request.user.teacher_profile.id, "code_verifier": flow.code_verifier},
+            {"teacher_id": request.user.teacher_profile.id, "code_verifier": code_verifier},
             salt=GOOGLE_TEACHER_OAUTH_STATE_SALT,
         )
         authorization_url, _ = flow.authorization_url(
