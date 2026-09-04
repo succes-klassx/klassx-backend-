@@ -61,12 +61,28 @@ class ParentalConsentAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} autorisation(s) marquée(s) comme confirmée(s).")
 
 
+class TeacherSubjectInline(admin.TabularInline):
+    """
+    Widget d'assignation matières ↔ enseignants (voir models.TeacherSubject
+    — déjà une vraie relation plusieurs-à-plusieurs, un enseignant peut
+    avoir plusieurs matières ET une matière peut avoir plusieurs
+    enseignants ; ce qui manquait, c'était une interface pratique pour
+    gérer ça sans créer les lignes une par une). Affiché des deux côtés
+    (TeacherProfileAdmin ET SubjectAdmin ci-dessous) — ajoutez/retirez
+    des lignes directement depuis la fiche de l'enseignant OU celle de la
+    matière, selon ce qui vous est le plus pratique sur le moment.
+    """
+    model = TeacherSubject
+    extra = 1
+
+
 @admin.register(TeacherProfile)
 class TeacherProfileAdmin(admin.ModelAdmin):
     list_display = ["user", "is_active", "is_featured", "subject", "compensation_type", "compensation_rate", "default_meeting_url", "google_connected"]
     list_filter = ["is_active", "is_featured"]
     list_editable = ["is_featured"]
     readonly_fields = ["google_oauth_refresh_token"]  # set only via the connect flow, never hand-edited
+    inlines = [TeacherSubjectInline]
 
 
 admin.site.register(TeacherAvailability)
@@ -75,6 +91,7 @@ admin.site.register(TeacherSubject)
 class SubjectAdmin(admin.ModelAdmin):
     list_display = ["name", "code", "bac_type", "cecrl_level", "level", "subject_type", "hours_per_week_premiere", "hours_per_week_terminale"]
     list_filter = ["bac_type", "subject_type", "level", "cecrl_level"]
+    inlines = [TeacherSubjectInline]
 
 
 @admin.register(SelfStudyPlan)
