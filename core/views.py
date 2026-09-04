@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import binascii
+import hashlib
 import logging
 import secrets
 
@@ -32,7 +33,7 @@ from .models import (
     ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
     ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
-    SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress,
+    SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress, WhiteboardSnapshot,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsOwnerOrAdmin, IsStudent, IsTeacher
 from .serializers import (
@@ -607,6 +608,73 @@ class ClassSessionViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(qs)
         serializer = self.get_serializer(page or qs, many=True)
         return self.get_paginated_response(serializer.data) if page is not None else Response(serializer.data)
+
+    def _check_whiteboard_access(self, session):
+        """
+        Le tableau blanc d'une séance n'est accessible qu'à l'enseignant
+        assigné à CETTE séance, ou à un élève qui y est inscrit — même
+        logique d'accès que MaterialViewSet.get_queryset, pour rester
+        cohérent avec le reste de la plateforme. Lève PermissionDenied
+        sinon (jamais un simple code partagé à la main).
+        """
+        user = self.request.user
+        if user.role == "admin":
+            return
+        if user.role == "teacher" and session.assigned_teacher_id == getattr(user.teacher_profile, "id", None):
+            return
+        if user.role == "student" and Enrollment.objects.filter(student=user, class_session=session).exists():
+            return
+        raise PermissionDenied("Vous n'avez pas accès au tableau de cette séance.")
+
+    @action(detail=True, methods=["get", "put"], url_path="whiteboard")
+    def whiteboard(self, request, pk=None):
+        """
+        GET/PUT /api/class-sessions/{id}/whiteboard/ — l'état sauvegardé
+        du tableau blanc interactif (voir models.WhiteboardSnapshot). PUT
+        remplace `pages` en entier à chaque sauvegarde (pas de diff
+        incrémental) — c'est la structure JSON produite telle quelle par
+        le tableau JS lui-même (tableau-lecons-3.html), le backend ne
+        l'interprète jamais, juste la stocke et la restitue.
+        """
+        session = self.get_object()
+        self._check_whiteboard_access(session)
+        snapshot, _ = WhiteboardSnapshot.objects.get_or_create(class_session=session)
+        if request.method == "GET":
+            return Response({"pages": snapshot.pages, "updated_at": snapshot.updated_at})
+        pages = request.data.get("pages")
+        if not isinstance(pages, list):
+            return Response({"detail": "pages must be a list."}, status=status.HTTP_400_BAD_REQUEST)
+        snapshot.pages = pages
+        snapshot.save(update_fields=["pages", "updated_at"])
+        return Response({"pages": snapshot.pages, "updated_at": snapshot.updated_at})
+
+    @action(detail=True, methods=["get"], url_path="whiteboard-room-code")
+    def whiteboard_room_code(self, request, pk=None):
+        """
+        GET /api/class-sessions/{id}/whiteboard-room-code/ — le code de
+        session PeerJS (voir tableau-lecons-3.html) pour CETTE séance
+        précise, dérivé de façon stable et signée plutôt que tapé/partagé
+        à la main. Accessible uniquement à l'enseignant assigné ou un
+        élève inscrit (_check_whiteboard_access) — c'est ce contrôle-là
+        qui protège réellement l'accès au tableau : PeerJS lui-même
+        n'a aucune notion de compte KLASSX, n'importe qui connaissant le
+        code peut s'y connecter techniquement, donc le code ne doit
+        jamais être découvrable sans être passé par cette vérification.
+        Signé + expire (max_age) pour qu'il ne reste pas valable
+        indéfiniment s'il fuitait.
+        """
+        session = self.get_object()
+        self._check_whiteboard_access(session)
+        # HMAC dérivé de SECRET_KEY + l'id de séance — déterministe (la
+        # même séance donne toujours le même code, pour que tout le monde
+        # se retrouve dans la même room PeerJS), mais impossible à deviner
+        # sans connaître SECRET_KEY. Alphanumérique uniquement (PeerJS
+        # n'accepte pas tous les caractères dans un ID de peer) —
+        # contrairement à signing.dumps(), qui inclut ':' et d'autres
+        # caractères non garantis compatibles.
+        digest = hashlib.sha256(f"{settings.SECRET_KEY}:whiteboard:{session.id}".encode()).hexdigest()
+        code = digest[:12].upper()
+        return Response({"room_code": code})
 
     @action(detail=False, methods=["post"])
     def add_extra_session(self, request):

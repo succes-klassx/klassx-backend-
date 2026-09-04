@@ -916,6 +916,31 @@ class ClassSession(models.Model):
         return self.confirmed_seats_taken < self.max_capacity
 
 
+class WhiteboardSnapshot(models.Model):
+    """
+    L'état sauvegardé du tableau blanc interactif (dessin, pages, PDF
+    importé) pour UNE séance précise — voir tableau-lecons-3.html côté
+    frontend, servi en iframe. Une ligne par ClassSession (OneToOne) :
+    contrairement à Material (documents que l'enseignant partage), ceci
+    est le contenu que l'enseignant ET les élèves produisent ENSEMBLE
+    pendant la séance elle-même, sauvegardé pour rester consultable après
+    coup — spec confirmée : pas éphémère.
+
+    `pages` est la sérialisation JSON telle que produite par le tableau
+    JS lui-même (liste de pages, chacune avec ses traits et son éventuel
+    fond PDF/image) — le backend ne comprend pas cette structure, il la
+    stocke et la restitue telle quelle (comme un simple presse-papier
+    côté serveur), toute la logique de rendu reste dans le JS du
+    tableau.
+    """
+    class_session = models.OneToOneField(ClassSession, on_delete=models.CASCADE, related_name="whiteboard")
+    pages = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Tableau — {self.class_session}"
+
+
 class Material(models.Model):
     """
     Content a teacher shares with their students — a document (PDF, etc.)
