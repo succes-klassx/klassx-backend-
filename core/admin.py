@@ -5,7 +5,7 @@ from django.utils import timezone
 import logging
 
 from .models import (
-    ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BlogPost, ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
     Payout, PricingRate, PromoCode, ReferralCommission, SeriesMembership, StaticPage,
     SelfStudyContentItem, SelfStudyPlan, StudentProfile, Subject, Subscription, TeacherAvailability, TeacherProfile,
@@ -78,7 +78,7 @@ class TeacherSubjectInline(admin.TabularInline):
 
 @admin.register(TeacherProfile)
 class TeacherProfileAdmin(admin.ModelAdmin):
-    list_display = ["user", "is_active", "is_featured", "subject", "compensation_type", "compensation_rate", "default_meeting_url", "google_connected"]
+    list_display = ["user", "is_active", "is_featured", "subject", "years_of_experience", "compensation_type", "compensation_rate", "default_meeting_url", "google_connected"]
     list_filter = ["is_active", "is_featured"]
     list_editable = ["is_featured"]
     readonly_fields = ["google_oauth_refresh_token"]  # set only via the connect flow, never hand-edited
@@ -97,12 +97,23 @@ class SubjectAdmin(admin.ModelAdmin):
 @admin.register(SelfStudyPlan)
 class SelfStudyPlanAdmin(admin.ModelAdmin):
     """
-    Les 5 abonnements — voir `python manage.py seed_selfstudy_plans` pour
-    les créer la première fois. Le prix (price_cents) est modifiable ici
-    directement, sans déploiement de code ni configuration Stripe
-    séparée (voir core/services/payments.py:create_subscription_checkout_session).
+    Les abonnements de contenu en libre-service — voir
+    `python manage.py seed_selfstudy_plans` pour les 6 plans Maths de
+    départ. Le prix (price_cents) est modifiable ici directement, sans
+    déploiement de code ni configuration Stripe séparée (voir
+    core/services/payments.py:create_subscription_checkout_session).
+
+    Pour ouvrir un nouveau plan sur une AUTRE matière que les Maths et
+    laisser un enseignant y soumettre son contenu lui-même : créez un
+    nouveau plan ici (code libre, ex: "physique_terminale_spe"), reliez-
+    le à la bonne `subject`, et choisissez l'enseignant responsable dans
+    `assigned_teacher` — c'est uniquement lui qui pourra ensuite proposer
+    du contenu dessus depuis son propre compte (via "Mon contenu
+    libre-service" dans son tableau de bord), toujours en attente de
+    votre validation ci-dessous avant d'être visible des élèves.
     """
-    list_display = ["name", "code", "price_cents", "price_eur", "is_active"]
+    list_display = ["name", "code", "subject", "assigned_teacher", "price_cents", "price_eur", "is_active"]
+    list_filter = ["is_active", "subject"]
     list_editable = ["price_cents", "is_active"]
 
     def price_eur(self, obj):
@@ -113,21 +124,31 @@ class SelfStudyPlanAdmin(admin.ModelAdmin):
 class SelfStudyContentItemAdmin(admin.ModelAdmin):
     """
     C'est ICI que vous débloquez le contenu du mois pour les abonnés
-    (spec). Un item créé ici reste invisible côté élève tant que
-    `is_unlocked` n'est pas coché — préparez tout le contenu du mois à
-    l'avance sans risque, puis cochez (directement dans la liste via
+    (spec). Un item créé ici (par vous) reste invisible côté élève tant
+    que `is_unlocked` n'est pas coché — préparez tout le contenu du mois
+    à l'avance sans risque, puis cochez (directement dans la liste via
     `is_unlocked` ci-dessous, ou en masse via l'action "Débloquer le
     contenu sélectionné") quand vous êtes prêt à le rendre visible aux
     abonnés actifs de ce plan. Seuls les abonnés dont le paiement est à
     jour (Subscription.status=ACTIVE) le voient — voir
     SelfStudyContentViewSet.
+
+    Un item soumis par un ENSEIGNANT (colonne "Soumis par" non vide)
+    démarre à "En attente de validation" — utilisez l'action "Approuver
+    le contenu sélectionné" une fois que vous avez vérifié son contenu
+    (ouvrez la fiche pour visionner/lire le fichier joint). Tant qu'un
+    item n'est pas approuvé, il reste invisible des élèves même si
+    `is_unlocked` est coché par erreur.
     """
-    list_display = ["title", "plan", "content_type", "month", "chapter_name", "is_unlocked", "order_index"]
-    list_filter = ["plan", "content_type", "month", "is_unlocked"]
+    list_display = [
+        "title", "plan", "content_type", "month", "chapter_name", "submitted_by", "status",
+        "is_unlocked", "order_index",
+    ]
+    list_filter = ["plan", "content_type", "month", "status", "is_unlocked"]
     list_editable = ["is_unlocked", "order_index"]
     search_fields = ["title", "chapter_name"]
     date_hierarchy = "month"
-    actions = ["unlock_selected", "lock_selected"]
+    actions = ["unlock_selected", "lock_selected", "approve_selected", "reject_selected"]
 
     @admin.action(description="Débloquer le contenu sélectionné")
     def unlock_selected(self, request, queryset):
@@ -138,6 +159,16 @@ class SelfStudyContentItemAdmin(admin.ModelAdmin):
     def lock_selected(self, request, queryset):
         updated = queryset.update(is_unlocked=False)
         self.message_user(request, f"{updated} élément(s) reverrouillé(s).")
+
+    @admin.action(description="Approuver le contenu sélectionné")
+    def approve_selected(self, request, queryset):
+        updated = queryset.update(status=SelfStudyContentItem.ApprovalStatus.APPROVED)
+        self.message_user(request, f"{updated} élément(s) approuvé(s) — pensez à cocher is_unlocked pour les rendre visibles.")
+
+    @admin.action(description="Refuser le contenu sélectionné")
+    def reject_selected(self, request, queryset):
+        updated = queryset.update(status=SelfStudyContentItem.ApprovalStatus.REJECTED, is_unlocked=False)
+        self.message_user(request, f"{updated} élément(s) refusé(s).")
 
 
 @admin.register(Subscription)
@@ -390,6 +421,27 @@ class StaticPageAdmin(admin.ModelAdmin):
     """Edit legal page content here — mentions légales, CGV, politique de confidentialité. No code deploy needed."""
     list_display = ["title", "slug", "updated_at"]
     readonly_fields = ["updated_at"]
+
+
+@admin.register(BlogPost)
+class BlogPostAdmin(admin.ModelAdmin):
+    """
+    C'est ICI que vous rédigez vos articles — aucun déploiement de code
+    nécessaire. `published_at` vide = brouillon, invisible du public ;
+    remplissez une date (peut être future, pour programmer la
+    publication) quand l'article est prêt. Voir l'aide du champ
+    `content` pour la mise en forme prise en charge (titres, gras,
+    liens).
+    """
+    list_display = ["title", "slug", "published_status", "published_at", "updated_at"]
+    list_filter = ["published_at"]
+    prepopulated_fields = {"slug": ("title",)}
+    readonly_fields = ["created_at", "updated_at"]
+    search_fields = ["title", "excerpt", "content"]
+
+    @admin.display(description="Statut", boolean=True)
+    def published_status(self, obj):
+        return obj.is_published
 
 
 @admin.register(NewsletterSubscriber)

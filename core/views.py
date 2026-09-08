@@ -15,6 +15,7 @@ from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, DurationField, ExpressionWrapper, F, Q, Sum
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -31,14 +32,15 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .utils import send_brevo_email
 from .models import (
-    ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BlogPost, ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
     ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
     SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress, WhiteboardSnapshot,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsOwnerOrAdmin, IsStudent, IsTeacher
 from .serializers import (
-    AffiliateRegistrationSerializer, ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
+    AffiliateRegistrationSerializer, BlogPostDetailSerializer, BlogPostListSerializer,
+    ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
     ForumReplySerializer, ForumThreadSerializer, GroupAnnouncementSerializer,
     GroupAssignmentSerializer, GroupRequestSerializer,
     IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PublicTeacherDetailSerializer, PublicTeacherSerializer,
@@ -46,6 +48,7 @@ from .serializers import (
     StudentSpecialtiesUpdateSerializer, SubjectSerializer,
     TeacherProfileSerializer, TeacherRegistrationSerializer,
     TeacherSettingsSerializer, UserSerializer, SelfStudyContentItemSerializer, SelfStudyPlanSerializer,
+    TeacherSelfStudyContentItemSerializer,
     VideoProgressSerializer,
 )
 from .services import brevo, google_meet, konnect, notifications, payments, video
@@ -320,6 +323,57 @@ class MyWhiteboardView(APIView):
         return Response({"pages": snapshot.pages, "updated_at": snapshot.updated_at})
 
 
+class MySelfStudyPlansView(generics.ListAPIView):
+    """
+    GET /api/me/selfstudy-plans/ — les plans de contenu en libre-service
+    dont CET enseignant est responsable (voir
+    SelfStudyPlan.assigned_teacher) — vide s'il n'en a aucun. C'est
+    l'admin qui décide, en créant/éditant un SelfStudyPlan depuis Django
+    admin, quel enseignant peut soumettre du contenu sur quel plan —
+    jamais l'enseignant lui-même.
+    """
+    serializer_class = SelfStudyPlanSerializer
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+
+    def get_queryset(self):
+        return SelfStudyPlan.objects.filter(assigned_teacher=self.request.user.teacher_profile)
+
+    def get_serializer_context(self):
+        return {"request": self.request}
+
+
+class MySelfStudyContentView(generics.ListCreateAPIView):
+    """
+    GET/POST /api/me/selfstudy-content/ — le contenu (vidéos/PDF) que CET
+    enseignant a soumis, uniquement sur les plans qui lui sont assignés
+    (voir SelfStudyPlan.assigned_teacher). Un nouvel item démarre TOUJOURS
+    à status=PENDING et is_unlocked=False, quoi que le client envoie —
+    voir perform_create ci-dessous, qui écrase ces deux champs après
+    validation. Un admin doit explicitement l'approuver (Django admin,
+    action groupée "Approuver") avant qu'il ne devienne éligible au
+    déblocage mensuel — voir SelfStudyContentViewSet.get_queryset côté
+    élève, qui exige is_unlocked ET status=APPROVED à la fois.
+    """
+    serializer_class = TeacherSelfStudyContentItemSerializer
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        return SelfStudyContentItem.objects.filter(
+            submitted_by=self.request.user.teacher_profile
+        ).select_related("plan")
+
+    def perform_create(self, serializer):
+        plan = serializer.validated_data.get("plan")
+        if plan.assigned_teacher_id != self.request.user.teacher_profile.id:
+            raise PermissionDenied("Ce plan ne vous est pas assigné — vous ne pouvez pas y soumettre de contenu.")
+        serializer.save(
+            submitted_by=self.request.user.teacher_profile,
+            status=SelfStudyContentItem.ApprovalStatus.PENDING,
+            is_unlocked=False,
+        )
+
+
 class PaymentMethodSetupView(APIView):
     """
     POST /api/me/payment-method/setup/ — returns a Stripe Checkout URL
@@ -583,12 +637,17 @@ class SelfStudyContentViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Catalogue du contenu (vidéos + PDF) d'un plan — spec : "chaque
     abonnement est tout seul et séparé". Ne renvoie QUE les items
-    `is_unlocked=True` (voir SelfStudyContentItem.is_unlocked) — un item
-    préparé mais pas encore débloqué par l'admin est invisible ici, même
-    pour un abonné actif ; playback_url/download_url vérifient en plus
+    `is_unlocked=True` ET `status=APPROVED` (voir
+    SelfStudyContentItem.is_unlocked/status) — un item soumis par un
+    enseignant reste invisible tant qu'un admin ne l'a pas explicitement
+    approuvé, même si is_unlocked venait à être coché par erreur ; un
+    item préparé mais pas encore débloqué est invisible aussi, même pour
+    un abonné actif ; playback_url/download_url vérifient en plus
     l'abonnement à CE plan précisément, pas juste être connecté.
     """
-    queryset = SelfStudyContentItem.objects.filter(is_unlocked=True).select_related("plan")
+    queryset = SelfStudyContentItem.objects.filter(
+        is_unlocked=True, status=SelfStudyContentItem.ApprovalStatus.APPROVED
+    ).select_related("plan")
     serializer_class = SelfStudyContentItemSerializer
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ["plan", "month", "content_type"]
@@ -2277,6 +2336,60 @@ class StaticPageDetailView(generics.RetrieveAPIView):
     permission_classes = [permissions.AllowAny]
     queryset = StaticPage.objects.all()
     lookup_field = "slug"
+
+
+class BlogPostListView(generics.ListAPIView):
+    """
+    GET /api/public/blog/ — articles publiés uniquement (voir
+    BlogPost.is_published) — un brouillon (published_at vide ou dans le
+    futur) n'apparaît jamais ici, seulement dans l'admin.
+    """
+    serializer_class = BlogPostListSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        return BlogPost.objects.filter(published_at__isnull=False, published_at__lte=timezone.now())
+
+
+class BlogPostDetailView(generics.RetrieveAPIView):
+    """GET /api/public/blog/<slug>/ — un article complet. Même règle de publication que la liste ci-dessus."""
+    serializer_class = BlogPostDetailSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "slug"
+
+    def get_queryset(self):
+        return BlogPost.objects.filter(published_at__isnull=False, published_at__lte=timezone.now())
+
+
+class SitemapView(APIView):
+    """
+    GET /sitemap.xml — plan de site pour le référencement (Google Search
+    Console, etc.). Inclut les pages fixes principales + chaque article
+    de blog publié (voir BlogPost.is_published), automatiquement à jour
+    à chaque nouvel article, sans y retoucher. Monté hors de /api/ dans
+    klassx/urls.py, et exposé sur le domaine du FRONTEND via une règle
+    de redirection Netlify (_redirects) — un sitemap doit lister des
+    adresses sur le même domaine que les pages réelles pour que Google
+    lui fasse confiance, pas sur le domaine de l'API.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        base = settings.FRONTEND_URL.rstrip("/")
+        static_paths = ["/", "/nos-enseignants", "/catalogue", "/blog", "/mentions-legales", "/cgv", "/confidentialite"]
+        urls = [f"<url><loc>{base}{p}</loc></url>" for p in static_paths]
+        for post in BlogPost.objects.filter(published_at__isnull=False, published_at__lte=timezone.now()):
+            urls.append(
+                f"<url><loc>{base}/blog/{post.slug}</loc>"
+                f"<lastmod>{post.updated_at.date().isoformat()}</lastmod></url>"
+            )
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            + "".join(urls) +
+            "</urlset>"
+        )
+        return HttpResponse(xml, content_type="application/xml")
 
 
 class PublicPricingView(APIView):

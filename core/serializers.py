@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    BacType, CecrlLevel, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BacType, BlogPost, CecrlLevel, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent,
     SeriesMembership, StaticPage, StudentProfile, Subject, TeacherProfile,
     SelfStudyContentItem, SelfStudyPlan, Subscription, TeacherSubject, VideoProgress,
@@ -499,7 +499,7 @@ class TeacherSettingsSerializer(serializers.ModelSerializer):
         model = TeacherProfile
         fields = [
             "id", "default_meeting_url", "google_account_email", "google_connected",
-            "photo", "bio", "bio_short", "title_degree", "subject",
+            "photo", "bio", "bio_short", "title_degree", "years_of_experience", "subject",
         ]
         read_only_fields = ["id", "google_account_email"]
         # google_oauth_refresh_token is never included — it's set only by
@@ -553,6 +553,27 @@ class SelfStudyContentItemSerializer(serializers.ModelSerializer):
         # débloqué n'apparaît simplement jamais dans la liste (voir
         # SelfStudyContentViewSet.get_queryset), donc ce champ n'a pas
         # besoin d'être exposé côté élève.
+
+
+class TeacherSelfStudyContentItemSerializer(serializers.ModelSerializer):
+    """
+    Utilisé par MySelfStudyContentView — l'enseignant soumet son contenu
+    (vidéo/PDF réels, pas juste les métadonnées) mais ne peut JAMAIS
+    définir `status` ou `is_unlocked` lui-même : forcés côté vue
+    (perform_create) à PENDING / False, quoi que le client envoie — seul
+    un admin peut faire passer un item à APPROVED puis le débloquer.
+    """
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    status = serializers.CharField(read_only=True)
+    is_unlocked = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = SelfStudyContentItem
+        fields = [
+            "id", "plan", "plan_name", "content_type", "title", "description", "chapter_name",
+            "month", "order_index", "duration_seconds", "video_provider_id", "pdf_file",
+            "status", "is_unlocked",
+        ]
 
 
 class VideoProgressSerializer(serializers.ModelSerializer):
@@ -964,7 +985,7 @@ class PublicTeacherSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TeacherProfile
-        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "bio_short"]
+        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "years_of_experience", "bio_short"]
 
 
 class PublicTeacherDetailSerializer(serializers.ModelSerializer):
@@ -979,7 +1000,7 @@ class PublicTeacherDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TeacherProfile
-        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "bio_short", "bio"]
+        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "years_of_experience", "bio_short", "bio"]
 
 
 class FAQSerializer(serializers.ModelSerializer):
@@ -992,6 +1013,19 @@ class StaticPageSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaticPage
         fields = ["slug", "title", "content", "updated_at"]
+
+
+class BlogPostListSerializer(serializers.ModelSerializer):
+    """Pour la liste des articles — pas le contenu complet, inutilement lourd pour une liste."""
+    class Meta:
+        model = BlogPost
+        fields = ["id", "title", "slug", "excerpt", "cover_image", "author_name", "published_at"]
+
+
+class BlogPostDetailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BlogPost
+        fields = ["id", "title", "slug", "excerpt", "content", "cover_image", "author_name", "published_at", "updated_at"]
 
 
 class NewsletterSubscriberSerializer(serializers.ModelSerializer):

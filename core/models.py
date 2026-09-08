@@ -345,7 +345,14 @@ class TeacherProfile(models.Model):
     )
     title_degree = models.CharField(
         max_length=200, blank=True,
-        help_text="Diplôme ou titre affiché publiquement, ex: \"Doctorante en Physique\", \"17 ans d'exp. Éducation Nationale\".",
+        help_text="Diplôme ou titre affiché publiquement, ex: \"Doctorante en Physique\", \"Maîtrise de Lettres modernes\".",
+    )
+    # Séparé de title_degree — affiché comme un vrai chiffre (badge/stat
+    # visuel "23 ans d'expérience") plutôt que noyé dans une phrase, pour
+    # rester scannable quand un parent compare plusieurs enseignants
+    # rapidement. Voir TeacherDetail.jsx et TeacherCard.jsx côté frontend.
+    years_of_experience = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="Nombre d'années d'expérience, affiché comme un chiffre mis en avant (ex: 23).",
     )
     bio_short = models.CharField(
         max_length=300, blank=True, help_text="Phrase d'accroche / citation courte affichée sur la carte enseignant.",
@@ -481,8 +488,28 @@ class SelfStudyPlan(models.Model):
         TERMINALE_MATHS_EXPERTES = "terminale_maths_expertes", "Terminale — Mathématiques Expertes"
         TERMINALE_MATHS_COMPLEMENTAIRES = "terminale_maths_complementaires", "Terminale — Mathématiques Complémentaires"
 
-    code = models.CharField(max_length=35, choices=MathTrack.choices, unique=True)
+    # N'est plus limité aux 6 valeurs ci-dessus (qui restent les codes des
+    # plans Maths déjà en place) — un nouveau plan pour une autre matière
+    # peut avoir n'importe quel code, du moment qu'il est unique (ex:
+    # "physique_terminale_spe"). MathTrack reste utile comme référence/
+    # convention de nommage pour les plans Maths existants.
+    code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=150)
+    # Optionnel — relie le plan à une vraie matière du catalogue (voir
+    # Subject). Les 6 plans Maths historiques n'en ont pas besoin (déjà
+    # explicites dans leur nom), mais un nouveau plan pour une autre
+    # matière devrait en avoir un, ne serait-ce que pour la cohérence.
+    subject = models.ForeignKey(
+        "Subject", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    # L'enseignant responsable de CE plan — c'est lui (et lui seul) qui
+    # peut soumettre du contenu dessus depuis son propre compte (voir
+    # MySelfStudyContentView). Vide = personne n'a le droit de soumettre,
+    # seul un admin peut ajouter du contenu directement (cas des 6 plans
+    # Maths actuels, gérés par l'équipe KLASSX elle-même).
+    assigned_teacher = models.ForeignKey(
+        "TeacherProfile", on_delete=models.SET_NULL, null=True, blank=True, related_name="selfstudy_plans",
+    )
     price_cents = models.PositiveIntegerField(default=499, help_text="Prix mensuel en centimes d'euro (défaut : 4,99€).")
     # Tunisie : prix indépendant du prix EUR ci-dessus (comme pour les
     # cours — voir core/pricing.py), pas une conversion de change. Payé
@@ -523,6 +550,11 @@ class SelfStudyContentItem(models.Model):
         VIDEO = "video", "Vidéo"
         PDF = "pdf", "PDF"
 
+    class ApprovalStatus(models.TextChoices):
+        APPROVED = "approved", "Approuvé"
+        PENDING = "pending", "En attente de validation"
+        REJECTED = "rejected", "Refusé"
+
     plan = models.ForeignKey(SelfStudyPlan, on_delete=models.CASCADE, related_name="content_items")
     content_type = models.CharField(max_length=5, choices=ContentType.choices)
     title = models.CharField(max_length=200)
@@ -539,6 +571,22 @@ class SelfStudyContentItem(models.Model):
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     # PDF : fichier uploadé directement (voir MEDIA_ROOT/MEDIA_URL).
     pdf_file = models.FileField(upload_to="selfstudy_pdfs/%Y/%m/", blank=True)
+    # Vide = créé directement par un admin (cas des 6 plans Maths
+    # actuels) — rempli automatiquement quand l'enseignant assigné au
+    # plan le soumet lui-même depuis son propre compte (voir
+    # MySelfStudyContentView.perform_create).
+    submitted_by = models.ForeignKey(
+        "TeacherProfile", on_delete=models.SET_NULL, null=True, blank=True, related_name="selfstudy_submissions",
+    )
+    # APPROVED par défaut — préserve le comportement existant (un item
+    # créé directement par un admin dans Django admin est visible aux
+    # abonnés dès que is_unlocked est coché, sans étape supplémentaire).
+    # Un item soumis par un enseignant démarre à PENDING (voir
+    # MySelfStudyContentView.perform_create qui le force) — un élève ne
+    # le voit JAMAIS tant qu'un admin ne l'a pas explicitement approuvé,
+    # même si is_unlocked venait à être coché par erreur (voir
+    # SelfStudyContentViewSet.get_queryset, qui exige les deux à la fois).
+    status = models.CharField(max_length=10, choices=ApprovalStatus.choices, default=ApprovalStatus.APPROVED)
 
     class Meta:
         ordering = ["plan", "month", "chapter_name", "order_index"]
@@ -1287,6 +1335,7 @@ class StaticPage(models.Model):
         MENTIONS_LEGALES = "mentions-legales", "Mentions légales"
         CGV = "cgv", "Conditions générales de vente"
         CONFIDENTIALITE = "confidentialite", "Politique de confidentialité"
+        A_PROPOS = "a-propos", "À propos de KLASSX"
 
     slug = models.CharField(max_length=30, choices=Slug.choices, unique=True)
     title = models.CharField(max_length=200)
@@ -1295,6 +1344,55 @@ class StaticPage(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class BlogPost(models.Model):
+    """
+    Article de blog — argument de référencement organique (SEO) : du
+    contenu ciblé ("Comment choisir ses spécialités", "Réviser le Grand
+    Oral"...) que les pages produit ne couvrent pas, pour attirer du
+    trafic sur des recherches précises.
+
+    `content` accepte du HTML complet, affiché tel quel sur le site (voir
+    BlogPostPage.jsx côté React, dangerouslySetInnerHTML) — pas de
+    transformation ni de mini-langage, sûr uniquement parce que ce champ
+    n'est modifiable que depuis l'admin (jamais par un élève ou un
+    enseignant).
+
+    `published_at` vide = brouillon, invisible du public (voir
+    BlogPostViewSet.get_queryset) — permet de préparer un article à
+    l'avance sans qu'il soit visible, exactement comme SelfStudyContentItem
+    .is_unlocked pour le contenu maths.
+    """
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True, help_text="Utilisé dans l'adresse : klassx.cloud/blog/CE-TEXTE")
+    excerpt = models.CharField(
+        max_length=300, blank=True,
+        help_text="Résumé court affiché dans la liste des articles et utilisé comme description pour Google — 1 à 2 phrases.",
+    )
+    content = models.TextField(
+        help_text="Du vrai HTML (ex: <p>...</p>, <h2>...</h2>, <strong>...</strong>, <a href=\"...\">...</a>, "
+                   "<img src=\"...\">) — affiché tel quel sur le site, sans transformation. Sûr uniquement parce "
+                   "que ce champ n'est modifiable que depuis l'admin.",
+    )
+    cover_image = models.ImageField(upload_to="blog_covers/%Y/%m/", blank=True)
+    author_name = models.CharField(max_length=100, blank=True, help_text="Affiché sous le titre — laissez vide pour ne rien afficher.")
+    published_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Vide = brouillon, invisible du public. Renseignez une date pour publier (peut être dans le futur pour programmer la publication).",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-published_at"]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def is_published(self):
+        return self.published_at is not None and self.published_at <= timezone.now()
 
 
 class NewsletterSubscriber(models.Model):

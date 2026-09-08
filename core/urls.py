@@ -33,6 +33,8 @@ urlpatterns = [
     path("me/teacher-hours/", views.MyTeacherHoursView.as_view(), name="me-teacher-hours"),
     path("me/specialties/", views.MySpecialtiesView.as_view(), name="me-specialties"),
     path("me/whiteboard/", views.MyWhiteboardView.as_view(), name="me-whiteboard"),
+    path("me/selfstudy-plans/", views.MySelfStudyPlansView.as_view(), name="me-selfstudy-plans"),
+    path("me/selfstudy-content/", views.MySelfStudyContentView.as_view(), name="me-selfstudy-content"),
     path("me/payment-method/setup/", views.PaymentMethodSetupView.as_view(), name="payment-method-setup"),
 
     # Landing page (public, unauthenticated) — see PublicTeacherSerializer /
@@ -42,6 +44,8 @@ urlpatterns = [
     path("public/pricing/", views.PublicPricingView.as_view(), name="public-pricing"),
     path("public/promo-codes/validate/", views.PublicValidatePromoCodeView.as_view(), name="public-promo-code-validate"),
     path("public/pages/<slug:slug>/", views.StaticPageDetailView.as_view(), name="public-page"),
+    path("public/blog/", views.BlogPostListView.as_view(), name="public-blog-list"),
+    path("public/blog/<slug:slug>/", views.BlogPostDetailView.as_view(), name="public-blog-detail"),
     path("public/newsletter/", views.PublicNewsletterSubscribeView.as_view(), name="public-newsletter"),
 
     # Teacher self-service settings (autonomous scheduling model) — must
