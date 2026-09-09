@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    BacType, BlogPost, CecrlLevel, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BacType, BlogPost, CecrlLevel, Pack, PromoVideo, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent,
     SeriesMembership, StaticPage, StudentProfile, Subject, TeacherProfile,
     SelfStudyContentItem, SelfStudyPlan, Subscription, TeacherSubject, VideoProgress,
@@ -499,7 +499,7 @@ class TeacherSettingsSerializer(serializers.ModelSerializer):
         model = TeacherProfile
         fields = [
             "id", "default_meeting_url", "google_account_email", "google_connected",
-            "photo", "bio", "bio_short", "title_degree", "years_of_experience", "subject",
+            "photo", "bio", "bio_short", "title_degree", "years_of_experience", "intro_video_url", "subject",
         ]
         read_only_fields = ["id", "google_account_email"]
         # google_oauth_refresh_token is never included — it's set only by
@@ -1000,7 +1000,7 @@ class PublicTeacherDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TeacherProfile
-        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "years_of_experience", "bio_short", "bio"]
+        fields = ["id", "full_name", "photo", "subject_name", "title_degree", "years_of_experience", "bio_short", "bio", "intro_video_url"]
 
 
 class FAQSerializer(serializers.ModelSerializer):
@@ -1020,6 +1020,27 @@ class BlogPostListSerializer(serializers.ModelSerializer):
     class Meta:
         model = BlogPost
         fields = ["id", "title", "slug", "excerpt", "cover_image", "author_name", "published_at"]
+
+
+class PromoVideoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PromoVideo
+        fields = ["id", "title", "video_url", "order_index"]
+
+
+class PackSerializer(serializers.ModelSerializer):
+    subject_names = serializers.SerializerMethodField()
+    group_tier_display = serializers.CharField(source="get_group_tier_display", read_only=True)
+
+    class Meta:
+        model = Pack
+        fields = [
+            "id", "name", "description", "subject_names", "group_tier", "group_tier_display",
+            "total_hours", "price_cents", "price_millimes_tnd",
+        ]
+
+    def get_subject_names(self, obj):
+        return [s.name for s in obj.subjects.all()]
 
 
 class BlogPostDetailSerializer(serializers.ModelSerializer):

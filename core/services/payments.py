@@ -123,6 +123,32 @@ def create_enrollment_checkout_session(enrollment, unit_amount_cents, currency="
     return session
 
 
+def create_pack_checkout_session(purchase, currency="eur"):
+    """
+    Creates a Stripe Checkout Session for a multi-subject Pack purchase
+    (see models.Pack/PackPurchase) — same one-time "payment" mode as
+    create_enrollment_checkout_session, just for a bundled price instead
+    of a single session.
+    """
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        customer_email=purchase.student.email,
+        line_items=[{
+            "price_data": {
+                "currency": currency,
+                "unit_amount": purchase.pack.price_cents,
+                "product_data": {"name": f"KLASSX — {purchase.pack.name}"},
+            },
+            "quantity": 1,
+        }],
+        metadata={"pack_purchase_id": str(purchase.id), "kind": "pack"},
+        success_url=f"{settings.FRONTEND_URL}/tableau-de-bord?payment=success",
+        cancel_url=f"{settings.FRONTEND_URL}/catalogue?payment=cancelled",
+    )
+    return session
+
+
 def create_subscription_checkout_session(user, plan, unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a self-study content

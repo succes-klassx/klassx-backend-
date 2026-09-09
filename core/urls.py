@@ -46,6 +46,9 @@ urlpatterns = [
     path("public/pages/<slug:slug>/", views.StaticPageDetailView.as_view(), name="public-page"),
     path("public/blog/", views.BlogPostListView.as_view(), name="public-blog-list"),
     path("public/blog/<slug:slug>/", views.BlogPostDetailView.as_view(), name="public-blog-detail"),
+    path("public/promo-videos/", views.PromoVideoListView.as_view(), name="public-promo-videos"),
+    path("public/packs/", views.PackListView.as_view(), name="public-packs"),
+    path("packs/<int:pk>/checkout/", views.PackCheckoutView.as_view(), name="pack-checkout"),
     path("public/newsletter/", views.PublicNewsletterSubscribeView.as_view(), name="public-newsletter"),
 
     # Teacher self-service settings (autonomous scheduling model) — must

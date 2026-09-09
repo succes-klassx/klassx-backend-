@@ -34,7 +34,7 @@ from .utils import send_brevo_email
 from .models import (
     BlogPost, ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
-    ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
+    Pack, PackPurchase, PromoVideo, ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
     SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress, WhiteboardSnapshot,
 )
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsOwnerOrAdmin, IsStudent, IsTeacher
@@ -43,7 +43,7 @@ from .serializers import (
     ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
     ForumReplySerializer, ForumThreadSerializer, GroupAnnouncementSerializer,
     GroupAssignmentSerializer, GroupRequestSerializer,
-    IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PublicTeacherDetailSerializer, PublicTeacherSerializer,
+    IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PackSerializer, PromoVideoSerializer, PublicTeacherDetailSerializer, PublicTeacherSerializer,
     SeriesMembershipSerializer, StaticPageSerializer, StudentRegistrationSerializer,
     StudentSpecialtiesUpdateSerializer, SubjectSerializer,
     TeacherProfileSerializer, TeacherRegistrationSerializer,
@@ -2157,8 +2157,19 @@ class StripeWebhookView(APIView):
                 self._confirm_series_membership(metadata.get("membership_id"), session)
             elif metadata.get("kind") == "card_setup":
                 self._save_default_payment_method(metadata.get("student_profile_id"), session)
+            elif metadata.get("kind") == "pack":
+                self._confirm_pack_purchase(metadata.get("pack_purchase_id"))
 
         return Response(status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _confirm_pack_purchase(purchase_id):
+        try:
+            purchase = PackPurchase.objects.get(pk=purchase_id)
+        except PackPurchase.DoesNotExist:
+            return
+        purchase.status = PackPurchase.Status.PAID
+        purchase.save(update_fields=["status"])
 
     @staticmethod
     def _save_default_payment_method(student_profile_id, stripe_session):
@@ -2349,6 +2360,53 @@ class BlogPostListView(generics.ListAPIView):
 
     def get_queryset(self):
         return BlogPost.objects.filter(published_at__isnull=False, published_at__lte=timezone.now())
+
+
+class PromoVideoListView(generics.ListAPIView):
+    """GET /api/public/promo-videos/ — vidéos de présentation actives, pour la page d'accueil."""
+    serializer_class = PromoVideoSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = PromoVideo.objects.filter(is_active=True)
+
+
+class PackListView(generics.ListAPIView):
+    """GET /api/public/packs/ — packs multi-matières actifs, voir models.Pack."""
+    serializer_class = PackSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = Pack.objects.filter(is_active=True).prefetch_related("subjects")
+
+
+class PackCheckoutView(APIView):
+    """
+    POST /api/packs/<id>/checkout/ — achète un pack. Même logique
+    Tunisie que IndividualBookingView/EnrollmentViewSet : pas de
+    paiement en ligne automatisé, l'élève contacte l'admin par e-mail,
+    qui approuve manuellement (voir PackPurchaseAdmin.mark_paid).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStudent]
+
+    def post(self, request, pk):
+        pack = get_object_or_404(Pack, pk=pk, is_active=True)
+        purchase = PackPurchase.objects.create(pack=pack, student=request.user, hours_remaining=pack.total_hours)
+
+        if request.user.country == "Tunisie":
+            return Response(
+                {"detail": "Votre demande est enregistrée. Le paiement en ligne n'est pas disponible "
+                           f"pour la Tunisie : contactez-nous à {settings.CONTACT_EMAIL} pour connaître les "
+                           "modalités de paiement par virement bancaire.",
+                 "code": "payment_by_email_tunisia",
+                 "contact_email": settings.CONTACT_EMAIL},
+                status=status.HTTP_201_CREATED,
+            )
+
+        try:
+            checkout_session = payments.create_pack_checkout_session(purchase)
+        except Exception:
+            purchase.delete()
+            return Response({"detail": "Le paiement n'est pas disponible pour le moment."}, status=status.HTTP_502_BAD_GATEWAY)
+        purchase.stripe_checkout_session_id = checkout_session.id
+        purchase.save(update_fields=["stripe_checkout_session_id"])
+        return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
 
 
 class BlogPostDetailView(generics.RetrieveAPIView):

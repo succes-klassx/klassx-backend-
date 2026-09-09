@@ -357,6 +357,14 @@ class TeacherProfile(models.Model):
     bio_short = models.CharField(
         max_length=300, blank=True, help_text="Phrase d'accroche / citation courte affichée sur la carte enseignant.",
     )
+    # Vidéo de présentation PERSONNELLE de cet enseignant (différent de
+    # PromoVideo, qui présente la plateforme dans son ensemble) — visible
+    # sur sa fiche détaillée (voir TeacherDetail.jsx), pour se présenter
+    # en vidéo aux futurs élèves/parents. Même convention qu'ailleurs :
+    # lien YouTube normal, conversion automatique côté frontend.
+    intro_video_url = models.URLField(
+        blank=True, help_text="Lien YouTube normal — vidéo où cet enseignant se présente aux futurs élèves.",
+    )
     is_featured = models.BooleanField(default=False, help_text="Afficher cet enseignant sur la page d'accueil.")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1393,6 +1401,99 @@ class BlogPost(models.Model):
     @property
     def is_published(self):
         return self.published_at is not None and self.published_at <= timezone.now()
+
+
+class PromoVideo(models.Model):
+    """
+    Vidéo de présentation de la plateforme, affichée sur la page
+    d'accueil — argument marketing ("faire connaître la plateforme"),
+    distinct du contenu pédagogique (SelfStudyContentItem) ou des
+    articles (BlogPost). Gérée entièrement depuis l'admin, aucun code à
+    toucher pour en ajouter/retirer une.
+
+    `video_url` accepte un lien YouTube normal (ex:
+    https://www.youtube.com/watch?v=XXXX ou https://youtu.be/XXXX) — la
+    conversion vers le format "embed" nécessaire à l'affichage se fait
+    automatiquement côté frontend (voir Home.jsx), pas besoin de
+    connaître le format technique d'intégration.
+    """
+    title = models.CharField(max_length=200, help_text="Titre affiché au-dessus de la vidéo (ex: \"Découvrez KLASSX en 2 minutes\").")
+    video_url = models.URLField(help_text="Lien YouTube normal — ex: https://www.youtube.com/watch?v=XXXX ou https://youtu.be/XXXX")
+    is_active = models.BooleanField(default=True, help_text="Décochez pour retirer la vidéo de la page d'accueil sans la supprimer.")
+    order_index = models.PositiveIntegerField(default=0, help_text="Les vidéos s'affichent triées par ce nombre, du plus petit au plus grand.")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order_index", "-created_at"]
+
+    def __str__(self):
+        return self.title
+
+
+class Pack(models.Model):
+    """
+    Un pack combine PLUSIEURS matières pour un nombre d'heures et un
+    prix fixés par vous (admin) — moins cher que réserver ces mêmes
+    heures séparément, matière par matière. Contrairement à
+    ClassSession/Enrollment (qui restent liés à UNE matière précise),
+    un Pack est un forfait global, dont les heures sont ensuite
+    réparties par vous entre les matières concernées au fil des séances
+    — même esprit que GroupAssignment, où c'est vous qui planifiez
+    manuellement après l'achat, pas un système automatique.
+
+    Après achat (voir PackPurchase), le solde d'heures restantes se
+    décrémente manuellement par vous à chaque séance effectivement
+    donnée — aucune déduction automatique depuis ClassSession pour
+    l'instant, volontairement, pour rester simple à ce stade.
+    """
+    name = models.CharField(max_length=150, help_text="Ex: \"Pack Terminale — Maths + Physique\".")
+    description = models.TextField(blank=True)
+    subjects = models.ManyToManyField(Subject, related_name="packs")
+    # Précise POUR QUELLE taille de groupe ce pack s'applique — combiné
+    # librement avec les matières/heures/prix, VOUS décidez le prix
+    # vous-même à chaque fois (jamais un calcul automatique à partir de
+    # PricingRate). Pour couvrir plusieurs tailles de groupe pour les
+    # mêmes matières, créez plusieurs packs, un par taille.
+    group_tier = models.CharField(
+        max_length=10, choices=PricingRate.GROUP_TIER_CHOICES,
+        help_text="Taille de groupe à laquelle ce pack s'applique.",
+    )
+    total_hours = models.PositiveIntegerField(help_text="Nombre total d'heures incluses dans ce pack, toutes matières confondues.")
+    price_cents = models.PositiveIntegerField(help_text="Prix total du pack, en centimes d'euro — fixé librement par vous.")
+    price_millimes_tnd = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Prix en millimes de dinar tunisien (optionnel) — voir PricingRate pour la même convention.",
+    )
+    is_active = models.BooleanField(default=True)
+    order_index = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order_index", "-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class PackPurchase(models.Model):
+    """
+    Un achat de pack par un élève — voir Pack.total_hours pour le solde
+    de départ. `hours_remaining` est décrémenté MANUELLEMENT par vous
+    (admin) au fil des séances données, pas automatiquement.
+    """
+    class Status(models.TextChoices):
+        PENDING = "pending", "En attente de paiement"
+        PAID = "paid", "Payé"
+
+    pack = models.ForeignKey(Pack, on_delete=models.PROTECT, related_name="purchases")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="pack_purchases")
+    hours_remaining = models.DecimalField(max_digits=6, decimal_places=1, null=True, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    stripe_checkout_session_id = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.pack.name} — {self.student}"
 
 
 class NewsletterSubscriber(models.Model):

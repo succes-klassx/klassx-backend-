@@ -5,7 +5,7 @@ from django.utils import timezone
 import logging
 
 from .models import (
-    BlogPost, ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BlogPost, ClassSeries, ClassSession, Pack, PackPurchase, PromoVideo, Enrollment, FAQ, ForumReply, ForumThread,
     GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
     Payout, PricingRate, PromoCode, ReferralCommission, SeriesMembership, StaticPage,
     SelfStudyContentItem, SelfStudyPlan, StudentProfile, Subject, Subscription, TeacherAvailability, TeacherProfile,
@@ -442,6 +442,58 @@ class BlogPostAdmin(admin.ModelAdmin):
     @admin.display(description="Statut", boolean=True)
     def published_status(self, obj):
         return obj.is_published
+
+
+@admin.register(PromoVideo)
+class PromoVideoAdmin(admin.ModelAdmin):
+    """
+    Vidéos de présentation affichées sur la page d'accueil — collez un
+    lien YouTube normal dans `video_url` (la conversion technique se
+    fait automatiquement côté site). Décochez `is_active` pour la
+    retirer sans la supprimer.
+    """
+    list_display = ["title", "video_url", "is_active", "order_index"]
+    list_editable = ["is_active", "order_index"]
+
+
+@admin.register(Pack)
+class PackAdmin(admin.ModelAdmin):
+    """
+    C'est ICI que vous combinez matières + taille de groupe + heures +
+    prix — cochez les matières incluses dans `subjects`, choisissez la
+    taille de groupe (`group_tier`), fixez le nombre d'heures total et
+    le prix que VOUS décidez (jamais calculé automatiquement). Pour
+    proposer le même ensemble de matières à plusieurs tailles de
+    groupe, créez plusieurs packs, un par taille. Décochez `is_active`
+    pour retirer un pack de la vente sans le supprimer.
+    """
+    list_display = ["name", "group_tier", "total_hours", "price_cents", "price_eur", "is_active", "order_index"]
+    list_filter = ["group_tier", "is_active"]
+    list_editable = ["is_active", "order_index"]
+    filter_horizontal = ["subjects"]
+
+    def price_eur(self, obj):
+        return f"{obj.price_cents / 100:.2f}€"
+
+
+@admin.register(PackPurchase)
+class PackPurchaseAdmin(admin.ModelAdmin):
+    """
+    Suivez ici les achats de packs et leur solde d'heures restant.
+    Décrémentez `hours_remaining` vous-même au fil des séances données à
+    l'élève — aucune déduction automatique. Pour la Tunisie (paiement
+    par virement, pas de carte en ligne), utilisez l'action
+    "Marquer payé" une fois le virement reçu.
+    """
+    list_display = ["pack", "student", "hours_remaining", "status", "created_at"]
+    list_filter = ["status", "pack"]
+    list_editable = ["hours_remaining"]
+    actions = ["mark_paid"]
+
+    @admin.action(description="Marquer payé (virement Tunisie reçu)")
+    def mark_paid(self, request, queryset):
+        updated = queryset.update(status=PackPurchase.Status.PAID)
+        self.message_user(request, f"{updated} achat(s) marqué(s) comme payé(s).")
 
 
 @admin.register(NewsletterSubscriber)
