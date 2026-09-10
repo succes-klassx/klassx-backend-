@@ -32,7 +32,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from .utils import send_brevo_email
 from .models import (
-    BlogPost, ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BlogPost, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription,
+    ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
     Pack, PackPurchase, PromoVideo, ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
     SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress, WhiteboardSnapshot,
@@ -40,6 +41,7 @@ from .models import (
 from .permissions import IsAdmin, IsAdminOrReadOnly, IsOwnerOrAdmin, IsStudent, IsTeacher
 from .serializers import (
     AffiliateRegistrationSerializer, BlogPostDetailSerializer, BlogPostListSerializer,
+    ChatMessageSerializer, ChatTutoringPlanSerializer, ChatTutoringSubscriptionSerializer,
     ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
     ForumReplySerializer, ForumThreadSerializer, GroupAnnouncementSerializer,
     GroupAssignmentSerializer, GroupRequestSerializer,
@@ -2159,8 +2161,19 @@ class StripeWebhookView(APIView):
                 self._save_default_payment_method(metadata.get("student_profile_id"), session)
             elif metadata.get("kind") == "pack":
                 self._confirm_pack_purchase(metadata.get("pack_purchase_id"))
+            elif metadata.get("kind") == "chat_subscription":
+                self._confirm_chat_subscription(metadata.get("chat_subscription_id"))
 
         return Response(status=status.HTTP_200_OK)
+
+    @staticmethod
+    def _confirm_chat_subscription(subscription_id):
+        try:
+            subscription = ChatTutoringSubscription.objects.get(pk=subscription_id)
+        except ChatTutoringSubscription.DoesNotExist:
+            return
+        subscription.status = ChatTutoringSubscription.Status.ACTIVE
+        subscription.save(update_fields=["status"])
 
     @staticmethod
     def _confirm_pack_purchase(purchase_id):
@@ -2407,6 +2420,178 @@ class PackCheckoutView(APIView):
         purchase.stripe_checkout_session_id = checkout_session.id
         purchase.save(update_fields=["stripe_checkout_session_id"])
         return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
+
+
+class ChatTutoringPlanListView(generics.ListAPIView):
+    """GET /api/public/chat-tutoring-plans/ — plans de chat actifs, voir models.ChatTutoringPlan."""
+    serializer_class = ChatTutoringPlanSerializer
+    permission_classes = [permissions.AllowAny]
+    queryset = ChatTutoringPlan.objects.filter(is_active=True).select_related("assigned_teacher__user", "subject")
+
+
+class ChatTutoringCheckoutView(APIView):
+    """
+    POST /api/chat-tutoring-plans/<id>/checkout/ — s'abonne (paiement
+    réel) à un plan de chat. Même logique Tunisie que PackCheckoutView.
+    Utilise get_or_create plutôt que create() : un élève qui s'était
+    déjà abonné puis désabonné a TOUJOURS la même ligne (contrainte
+    d'unicité plan+élève) — la réutiliser au lieu d'en créer une nouvelle
+    évite un crash sur la contrainte, ET préserve `free_question_used`
+    pour toujours (voir ChatTutoringSubscription).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStudent]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(ChatTutoringPlan, pk=pk, is_active=True)
+        subscription, _ = ChatTutoringSubscription.objects.get_or_create(plan=plan, student=request.user)
+        if subscription.status == ChatTutoringSubscription.Status.ACTIVE:
+            return Response({"detail": "Vous êtes déjà abonné à ce service."}, status=status.HTTP_400_BAD_REQUEST)
+        subscription.status = ChatTutoringSubscription.Status.PENDING
+        subscription.save(update_fields=["status"])
+
+        if request.user.country == "Tunisie":
+            return Response(
+                {"detail": "Votre demande est enregistrée. Le paiement en ligne n'est pas disponible "
+                           f"pour la Tunisie : contactez-nous à {settings.CONTACT_EMAIL} pour connaître les "
+                           "modalités de paiement par virement bancaire.",
+                 "code": "payment_by_email_tunisia",
+                 "contact_email": settings.CONTACT_EMAIL},
+                status=status.HTTP_201_CREATED,
+            )
+
+        try:
+            checkout_session = payments.create_chat_tutoring_checkout_session(subscription)
+        except Exception:
+            return Response({"detail": "Le paiement n'est pas disponible pour le moment."}, status=status.HTTP_502_BAD_GATEWAY)
+        subscription.stripe_subscription_id = checkout_session.id
+        subscription.save(update_fields=["stripe_subscription_id"])
+        return Response({"checkout_url": checkout_session.url}, status=status.HTTP_201_CREATED)
+
+
+class ChatTutoringTryFreeView(APIView):
+    """
+    POST /api/chat-tutoring-plans/<id>/try-free/ — démarre (ou récupère)
+    l'abonnement SANS paiement, pour poser la question d'essai gratuite.
+    N'appelle jamais Stripe. Le statut reste PENDING — voir
+    ChatThreadMessagesView.perform_create, qui autorise exactement UN
+    message étudiant tant que `free_question_used` est encore False,
+    même en PENDING, puis bloque tout message suivant jusqu'au paiement
+    réel (ChatTutoringCheckoutView).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsStudent]
+
+    def post(self, request, pk):
+        plan = get_object_or_404(ChatTutoringPlan, pk=pk, is_active=True)
+        subscription, _ = ChatTutoringSubscription.objects.get_or_create(plan=plan, student=request.user)
+        if subscription.status == ChatTutoringSubscription.Status.ACTIVE:
+            return Response({"detail": "Vous êtes déjà abonné à ce service."}, status=status.HTTP_400_BAD_REQUEST)
+        if subscription.free_question_used:
+            return Response({"detail": "Vous avez déjà utilisé votre question gratuite."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = ChatTutoringSubscriptionSerializer(subscription)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class MyChatSubscriptionsView(generics.ListAPIView):
+    """GET /api/me/chat-subscriptions/ — les abonnements de chat de l'élève connecté."""
+    serializer_class = ChatTutoringSubscriptionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsStudent]
+
+    def get_queryset(self):
+        return ChatTutoringSubscription.objects.filter(student=self.request.user).select_related("plan", "thread")
+
+
+class MyTeacherChatSubscriptionsView(generics.ListAPIView):
+    """GET /api/me/teacher-chat-subscriptions/ — les abonnements de chat où CET enseignant doit répondre."""
+    serializer_class = ChatTutoringSubscriptionSerializer
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+
+    def get_queryset(self):
+        return ChatTutoringSubscription.objects.filter(
+            plan__assigned_teacher=self.request.user.teacher_profile, status="active",
+        ).select_related("plan", "student", "thread")
+
+
+class ChatThreadMessagesView(generics.ListCreateAPIView):
+    """
+    GET/POST /api/chat-subscriptions/<id>/messages/ — le fil de
+    discussion d'un abonnement précis. Accessible par l'ÉLÈVE propriétaire
+    OU l'ENSEIGNANT assigné à ce plan, personne d'autre (voir
+    get_subscription). Le fil (ChatThread) est créé automatiquement au
+    premier message, pas à la souscription — pas besoin d'un fil vide
+    qui ne sert à rien tant que personne n'a encore écrit.
+
+    Le quota (`ChatTutoringPlan.max_questions_per_month`) n'est vérifié
+    QUE pour un message envoyé par l'élève — un enseignant qui répond ne
+    consomme jamais le quota de son propre élève. Le quota se remet à
+    zéro automatiquement dès que le mois calendaire a changé depuis
+    `period_started_at` (pas besoin d'une tâche planifiée séparée).
+    """
+    serializer_class = ChatMessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_subscription(self):
+        subscription = get_object_or_404(ChatTutoringSubscription, pk=self.kwargs["pk"])
+        user = self.request.user
+        is_owner_student = user.role == "student" and subscription.student_id == user.id
+        is_assigned_teacher = (
+            user.role == "teacher" and hasattr(user, "teacher_profile")
+            and subscription.plan.assigned_teacher_id == user.teacher_profile.id
+        )
+        if not (is_owner_student or is_assigned_teacher):
+            raise PermissionDenied("Vous n'avez pas accès à ce fil de discussion.")
+        return subscription
+
+    def get_queryset(self):
+        subscription = self.get_subscription()
+        if not hasattr(subscription, "thread"):
+            return ChatMessage.objects.none()
+        return subscription.thread.messages.select_related("sender")
+
+    def perform_create(self, serializer):
+        subscription = self.get_subscription()
+        is_student_sender = self.request.user.role == "student"
+        is_free_question = False
+
+        if is_student_sender:
+            if subscription.status != ChatTutoringSubscription.Status.ACTIVE:
+                # Pas encore payé — autorisé UNIQUEMENT pour la toute
+                # première question gratuite (voir ChatTutoringTryFreeView
+                # qui a créé cette ligne PENDING). Toute tentative
+                # suivante, même en PENDING, est bloquée.
+                if subscription.free_question_used:
+                    raise PermissionDenied(
+                        "Votre abonnement n'est pas encore actif — le paiement doit être confirmé avant de pouvoir écrire à nouveau."
+                    )
+                is_free_question = True
+            else:
+                # Remise à zéro automatique du quota si on est passé dans
+                # un nouveau mois calendaire depuis le début de la période.
+                now = timezone.now()
+                if now.month != subscription.period_started_at.month or now.year != subscription.period_started_at.year:
+                    subscription.questions_used_this_period = 0
+                    subscription.period_started_at = now
+                    subscription.save(update_fields=["questions_used_this_period", "period_started_at"])
+                if subscription.questions_used_this_period >= subscription.plan.max_questions_per_month:
+                    raise PermissionDenied(
+                        f"Quota atteint ({subscription.plan.max_questions_per_month} questions ce mois-ci) — "
+                        "réessayez le mois prochain."
+                    )
+
+        thread, _ = ChatThread.objects.get_or_create(subscription=subscription)
+        serializer.save(thread=thread, sender=self.request.user)
+
+        if is_free_question:
+            # Enregistrée pour information seulement (voir la discussion
+            # sur les faux positifs d'IP partagée) — ne bloque jamais
+            # automatiquement personne, juste une donnée disponible dans
+            # l'admin en cas de doute sur un abus.
+            subscription.free_question_used = True
+            subscription.free_question_ip = self.request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or self.request.META.get("REMOTE_ADDR")
+            subscription.save(update_fields=["free_question_used", "free_question_ip"])
+        elif is_student_sender:
+            subscription.questions_used_this_period += 1
+            subscription.save(update_fields=["questions_used_this_period"])
 
 
 class BlogPostDetailView(generics.RetrieveAPIView):

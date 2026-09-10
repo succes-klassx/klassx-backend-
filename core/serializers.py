@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
-    BacType, BlogPost, CecrlLevel, Pack, PromoVideo, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
+    BacType, BlogPost, CecrlLevel, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription, Pack, PromoVideo, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
     GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent,
     SeriesMembership, StaticPage, StudentProfile, Subject, TeacherProfile,
     SelfStudyContentItem, SelfStudyPlan, Subscription, TeacherSubject, VideoProgress,
@@ -1041,6 +1041,40 @@ class PackSerializer(serializers.ModelSerializer):
 
     def get_subject_names(self, obj):
         return [s.name for s in obj.subjects.all()]
+
+
+class ChatTutoringPlanSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.CharField(source="assigned_teacher.user.get_full_name", read_only=True)
+    subject_name = serializers.CharField(source="subject.name", read_only=True, allow_null=True)
+
+    class Meta:
+        model = ChatTutoringPlan
+        fields = [
+            "id", "name", "description", "teacher_name", "subject_name",
+            "max_questions_per_month", "price_cents", "price_millimes_tnd",
+        ]
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    sender_name = serializers.CharField(source="sender.get_full_name", read_only=True)
+
+    class Meta:
+        model = ChatMessage
+        fields = ["id", "sender", "sender_name", "content", "attachment", "created_at"]
+        read_only_fields = ["id", "sender", "sender_name", "created_at"]
+
+
+class ChatTutoringSubscriptionSerializer(serializers.ModelSerializer):
+    plan_name = serializers.CharField(source="plan.name", read_only=True)
+    max_questions_per_month = serializers.IntegerField(source="plan.max_questions_per_month", read_only=True)
+    thread_id = serializers.IntegerField(source="thread.id", read_only=True, allow_null=True)
+
+    class Meta:
+        model = ChatTutoringSubscription
+        fields = [
+            "id", "plan", "plan_name", "status", "questions_used_this_period",
+            "max_questions_per_month", "period_started_at", "thread_id", "free_question_used",
+        ]
 
 
 class BlogPostDetailSerializer(serializers.ModelSerializer):

@@ -49,6 +49,12 @@ urlpatterns = [
     path("public/promo-videos/", views.PromoVideoListView.as_view(), name="public-promo-videos"),
     path("public/packs/", views.PackListView.as_view(), name="public-packs"),
     path("packs/<int:pk>/checkout/", views.PackCheckoutView.as_view(), name="pack-checkout"),
+    path("public/chat-tutoring-plans/", views.ChatTutoringPlanListView.as_view(), name="public-chat-plans"),
+    path("chat-tutoring-plans/<int:pk>/checkout/", views.ChatTutoringCheckoutView.as_view(), name="chat-plan-checkout"),
+    path("chat-tutoring-plans/<int:pk>/try-free/", views.ChatTutoringTryFreeView.as_view(), name="chat-plan-try-free"),
+    path("me/chat-subscriptions/", views.MyChatSubscriptionsView.as_view(), name="me-chat-subscriptions"),
+    path("me/teacher-chat-subscriptions/", views.MyTeacherChatSubscriptionsView.as_view(), name="me-teacher-chat-subscriptions"),
+    path("chat-subscriptions/<int:pk>/messages/", views.ChatThreadMessagesView.as_view(), name="chat-subscription-messages"),
     path("public/newsletter/", views.PublicNewsletterSubscribeView.as_view(), name="public-newsletter"),
 
     # Teacher self-service settings (autonomous scheduling model) — must

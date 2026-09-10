@@ -1496,6 +1496,117 @@ class PackPurchase(models.Model):
         return f"{self.pack.name} — {self.student}"
 
 
+class ChatTutoringPlan(models.Model):
+    """
+    Service de chat avec un enseignant précis — l'élève pose ses
+    questions par écrit (avec pièce jointe possible, ex: photo d'un
+    devoir), l'enseignant répond sous 24h (asynchrone, pas un vrai chat
+    instantané — spec confirmée : plus soutenable pour un enseignant
+    seul qu'une vraie disponibilité en direct). Distinct du libre-
+    service (SelfStudyPlan, du contenu déjà prêt, sans échange) ET des
+    cours en direct (ClassSession, avec créneau planifié) — ici,
+    l'élève écrit quand il veut, dans la limite du quota mensuel.
+
+    `max_questions_per_month` protège l'enseignant d'un usage
+    illimité qui deviendrait intenable à gérer seul — voir
+    ChatThread.questions_used_this_period pour le suivi du quota.
+    """
+    assigned_teacher = models.ForeignKey(
+        "TeacherProfile", on_delete=models.CASCADE, related_name="chat_tutoring_plans",
+        help_text="L'enseignant qui répondra personnellement aux questions de ce plan.",
+    )
+    subject = models.ForeignKey("Subject", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    name = models.CharField(max_length=150, help_text="Ex: \"Chat Maths avec Mme Ben Ayed\".")
+    description = models.TextField(blank=True)
+    max_questions_per_month = models.PositiveIntegerField(default=10)
+    price_cents = models.PositiveIntegerField(help_text="Prix mensuel, en centimes d'euro.")
+    price_millimes_tnd = models.PositiveIntegerField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class ChatTutoringSubscription(models.Model):
+    """
+    Un élève abonné à un ChatTutoringPlan — un seul fil de discussion
+    continu par abonnement (voir ChatThread), pas un fil par question.
+    `questions_used_this_period` se remet à zéro automatiquement au
+    renouvellement (voir la commande reset_chat_quotas, à lancer une
+    fois par mois — ou vérifié à la volée dans la vue si le mois a
+    changé depuis `period_started_at`).
+    """
+    class Status(models.TextChoices):
+        PENDING = "pending", "En attente de paiement"
+        ACTIVE = "active", "Actif"
+        CANCELLED = "cancelled", "Annulé"
+
+    plan = models.ForeignKey(ChatTutoringPlan, on_delete=models.PROTECT, related_name="subscriptions")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_tutoring_subscriptions")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    questions_used_this_period = models.PositiveIntegerField(default=0)
+    period_started_at = models.DateTimeField(auto_now_add=True)
+    stripe_subscription_id = models.CharField(max_length=200, blank=True)
+    # Question d'essai gratuite — voir ChatThreadMessagesView.perform_create
+    # pour la logique complète. Reste True pour TOUJOURS une fois posée,
+    # même si l'élève se désabonne puis se réabonne plus tard (la même
+    # ligne persiste — voir get_or_create dans ChatTutoringCheckoutView,
+    # jamais une nouvelle ligne créée pour le même couple plan+élève).
+    free_question_used = models.BooleanField(default=False)
+    # Juste enregistrée pour information dans l'admin, en cas de doute
+    # sur un usage abusif (plusieurs comptes créés pour reprendre une
+    # question gratuite) — ne bloque JAMAIS automatiquement personne
+    # (voir la discussion sur les faux positifs : IP partagée par une
+    # famille, un lycée, un réseau mobile...). Une vérification manuelle
+    # reste nécessaire si un abus est suspecté.
+    free_question_ip = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["plan", "student"], name="one_chat_subscription_per_plan_per_student"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.plan.name}"
+
+
+class ChatThread(models.Model):
+    """
+    Le fil de discussion unique associé à un abonnement — créé
+    automatiquement à la première question (voir la vue de création de
+    message). Un seul fil par abonnement, pas un par question, pour
+    garder l'historique complet visible des deux côtés.
+    """
+    subscription = models.OneToOneField(ChatTutoringSubscription, on_delete=models.CASCADE, related_name="thread")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Fil — {self.subscription}"
+
+
+class ChatMessage(models.Model):
+    """
+    Un message dans un ChatThread — envoyé par l'élève (avec
+    éventuellement un devoir/document joint) ou par l'enseignant qui
+    répond. `attachment` accepte n'importe quel type de fichier
+    raisonnable (photo, PDF, Word...) — pas de restriction stricte de
+    type, l'énoncé d'un devoir peut arriver sous plusieurs formats.
+    """
+    thread = models.ForeignKey(ChatThread, on_delete=models.CASCADE, related_name="messages")
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_messages_sent")
+    content = models.TextField(blank=True)
+    attachment = models.FileField(upload_to="chat_attachments/%Y/%m/", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.sender} — {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class NewsletterSubscriber(models.Model):
     """
     An email address collected from the landing page's footer newsletter

@@ -5,7 +5,7 @@ from django.utils import timezone
 import logging
 
 from .models import (
-    BlogPost, ClassSeries, ClassSession, Pack, PackPurchase, PromoVideo, Enrollment, FAQ, ForumReply, ForumThread,
+    BlogPost, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription, ClassSeries, ClassSession, Pack, PackPurchase, PromoVideo, Enrollment, FAQ, ForumReply, ForumThread,
     GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
     Payout, PricingRate, PromoCode, ReferralCommission, SeriesMembership, StaticPage,
     SelfStudyContentItem, SelfStudyPlan, StudentProfile, Subject, Subscription, TeacherAvailability, TeacherProfile,
@@ -494,6 +494,54 @@ class PackPurchaseAdmin(admin.ModelAdmin):
     def mark_paid(self, request, queryset):
         updated = queryset.update(status=PackPurchase.Status.PAID)
         self.message_user(request, f"{updated} achat(s) marqué(s) comme payé(s).")
+
+
+@admin.register(ChatTutoringPlan)
+class ChatTutoringPlanAdmin(admin.ModelAdmin):
+    """
+    C'est ICI que vous créez un service de chat pour un enseignant
+    précis — choisissez l'enseignant qui répondra personnellement
+    (`assigned_teacher`), le quota mensuel de questions, et le prix.
+    Décochez `is_active` pour le retirer de la vente sans le supprimer.
+    """
+    list_display = ["name", "assigned_teacher", "subject", "max_questions_per_month", "price_cents", "price_eur", "is_active"]
+    list_filter = ["is_active", "assigned_teacher"]
+    list_editable = ["is_active"]
+
+    def price_eur(self, obj):
+        return f"{obj.price_cents / 100:.2f}€/mois"
+
+
+@admin.register(ChatTutoringSubscription)
+class ChatTutoringSubscriptionAdmin(admin.ModelAdmin):
+    """
+    Suivez ici les abonnements au chat et leur quota consommé ce mois.
+    Pour la Tunisie (paiement par virement), utilisez l'action "Marquer
+    payé" une fois le virement reçu — l'élève ne peut pas écrire dans le
+    fil tant que le statut n'est pas "active".
+
+    `free_question_ip` : enregistrée uniquement à titre informatif si
+    vous soupçonnez un abus (plusieurs comptes créés pour reprendre une
+    question gratuite) — ne bloque jamais rien automatiquement, une
+    même adresse IP peut très bien correspondre à plusieurs personnes
+    légitimes (famille, lycée, réseau mobile partagé).
+    """
+    list_display = ["plan", "student", "status", "questions_used_this_period", "free_question_used", "free_question_ip", "period_started_at"]
+    list_filter = ["status", "plan", "free_question_used"]
+    actions = ["mark_paid"]
+
+    @admin.action(description="Marquer payé / activer (virement Tunisie reçu)")
+    def mark_paid(self, request, queryset):
+        updated = queryset.update(status=ChatTutoringSubscription.Status.ACTIVE)
+        self.message_user(request, f"{updated} abonnement(s) activé(s).")
+
+
+@admin.register(ChatMessage)
+class ChatMessageAdmin(admin.ModelAdmin):
+    """Lecture des messages échangés — utile pour vérifier la qualité des réponses ou en cas de litige. Ne pas modifier directement, laisser les élèves/enseignants échanger depuis le site."""
+    list_display = ["thread", "sender", "created_at"]
+    list_filter = ["created_at"]
+    readonly_fields = ["thread", "sender", "content", "attachment", "created_at"]
 
 
 @admin.register(NewsletterSubscriber)
