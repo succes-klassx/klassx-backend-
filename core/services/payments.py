@@ -184,6 +184,40 @@ def create_subscription_checkout_session(user, plan, unit_amount_cents_override=
     return session
 
 
+def create_chat_tutoring_checkout_session(subscription):
+    """
+    Creates a Stripe Checkout Session for a chat-tutoring subscription
+    (see models.ChatTutoringPlan/ChatTutoringSubscription) — same monthly
+    recurring pattern as create_subscription_checkout_session above,
+    billed on `subscription.plan.price_cents`.
+
+    Confirmed asynchronously by the checkout.session.completed webhook via
+    metadata kind="chat_subscription" (see
+    views.StripeWebhookView._confirm_chat_subscription), which flips the
+    subscription's status to ACTIVE — never trust the browser redirect
+    alone (same rule as every other flow in this module).
+    """
+    plan = subscription.plan
+    session = stripe.checkout.Session.create(
+        mode="subscription",
+        payment_method_types=["card"],
+        customer_email=subscription.student.email,
+        line_items=[{
+            "price_data": {
+                "currency": "eur",
+                "unit_amount": plan.price_cents,
+                "recurring": {"interval": "month"},
+                "product_data": {"name": f"KLASSX — {plan.name}"},
+            },
+            "quantity": 1,
+        }],
+        metadata={"kind": "chat_subscription", "chat_subscription_id": str(subscription.id)},
+        success_url=f"{settings.FRONTEND_URL}/chat-enseignant?subscription=success",
+        cancel_url=f"{settings.FRONTEND_URL}/chat-enseignant?subscription=cancelled",
+    )
+    return session
+
+
 def create_series_subscription_checkout_session(membership, unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a student's monthly subscription
