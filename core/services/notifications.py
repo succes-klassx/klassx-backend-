@@ -5,11 +5,23 @@ needs EMAIL_* settings changed to send real emails via SMTP/SendGrid/etc.
 
 SMS and in-app notifications aren't implemented — the spec left the channel
 choice open (5.6), this covers the email channel as a starting point.
+
+NOTE (2026-09): the project's other proven, actually-delivering email path
+is utils.send_brevo_email — used directly by views.PasswordResetView, via
+Brevo's HTTP API and BREVO_API_KEY, entirely separate from the SMTP-based
+_send() below. send_student_welcome uses that proven path instead of
+_send() for that reason. The other _send()-based notifications in this
+file (enrollment confirmations, etc.) have not been confirmed to actually
+deliver in production — only that they don't crash the request that
+triggers them (see _send's try/except). Worth verifying each with a real
+test before relying on them, the same way the welcome email was.
 """
 import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
+
+from ..utils import send_brevo_email
 
 logger = logging.getLogger(__name__)
 
@@ -222,15 +234,23 @@ def send_student_welcome(user):
     Sent right after a student finishes self-registration (see
     views.RegisterView.perform_create). Purely informational — unlike the
     emails above, it isn't tied to any booking/payment event, just the
-    account's creation.
+    account's creation. Uses send_brevo_email (Brevo's HTTP API) rather
+    than _send() above — see the module docstring for why.
     """
-    _send(
-        user.email,
-        "Bienvenue sur KLASSX !",
-        f"Bonjour {user.first_name},\n\n"
-        f"Votre compte KLASSX est créé — bienvenue !\n\n"
-        f"Vous pouvez dès maintenant rejoindre un cours, découvrir nos enseignants "
-        f"et démarrer votre préparation au Baccalauréat.\n\n"
-        f"À bientôt sur KLASSX !",
-    )
+    if not user.email:
+        return
+    try:
+        send_brevo_email(
+            user.email,
+            "Bienvenue sur KLASSX !",
+            f"<p>Bonjour {user.first_name},</p>"
+            f"<p>Votre compte KLASSX est créé — bienvenue !</p>"
+            f"<p>Vous pouvez dès maintenant rejoindre un cours, découvrir nos enseignants "
+            f"et démarrer votre préparation au Baccalauréat.</p>"
+            f"<p>À bientôt sur KLASSX !</p>",
+        )
+    except Exception:
+        # Même principe que _send() : un souci d'envoi ne doit jamais faire
+        # échouer l'inscription elle-même — juste finir dans les logs.
+        logger.exception("Échec de l'envoi de l'email de bienvenue à %s", user.email)
 

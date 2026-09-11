@@ -594,6 +594,16 @@ class SubjectViewSet(viewsets.ModelViewSet):
     serializer_class = SubjectSerializer
     permission_classes = [IsAdminOrReadOnly]
     filterset_fields = ["level", "bac_type"]
+    # Le catalogue de matières est une liste de référence, pas un flux à
+    # parcourir page par page — et le frontend (Catalog.jsx, Dashboard.jsx)
+    # ne récupère jamais qu'une seule page. Avec la pagination par défaut
+    # du projet (20/page) et Subject.Meta.ordering = ["name"], toute
+    # matière triée après la 20e position alphabétique (ex: Mathématiques,
+    # NSI, Physique-Chimie, SVT dès qu'il y a assez de matières avant M
+    # dans l'alphabet) devenait invisible côté élève — jamais supprimée,
+    # juste jamais récupérée. On désactive la pagination ici : la liste
+    # complète est toujours retournée en un seul appel.
+    pagination_class = None
 
 
 class TeacherProfileViewSet(viewsets.ReadOnlyModelViewSet):
