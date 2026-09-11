@@ -215,3 +215,22 @@ def send_group_assigned_to_teacher(assignment):
         f"Rendez-vous sur votre tableau de bord pour choisir le jour, l'horaire et le lien de visioconférence.\n\n"
         f"À bientôt sur KLASSX !",
     )
+
+
+def send_student_welcome(user):
+    """
+    Sent right after a student finishes self-registration (see
+    views.RegisterView.perform_create). Purely informational — unlike the
+    emails above, it isn't tied to any booking/payment event, just the
+    account's creation.
+    """
+    _send(
+        user.email,
+        "Bienvenue sur KLASSX !",
+        f"Bonjour {user.first_name},\n\n"
+        f"Votre compte KLASSX est créé — bienvenue !\n\n"
+        f"Vous pouvez dès maintenant rejoindre un cours, découvrir nos enseignants "
+        f"et démarrer votre préparation au Baccalauréat.\n\n"
+        f"À bientôt sur KLASSX !",
+    )
+

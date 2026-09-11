@@ -92,6 +92,13 @@ class RegisterView(generics.CreateAPIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "register"
 
+    def perform_create(self, serializer):
+        user = serializer.save()
+        # Best-effort, comme toutes les notifications de ce module — un
+        # souci d'envoi (SMTP mal configuré, Brevo indisponible...) ne doit
+        # jamais faire échouer l'inscription elle-même (voir _send).
+        notifications.send_student_welcome(user)
+
 
 class TeacherRegisterView(generics.CreateAPIView):
     """

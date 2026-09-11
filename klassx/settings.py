@@ -298,10 +298,11 @@ BREVO_NEWSLETTER_LIST_ID = os.environ.get("BREVO_NEWSLETTER_LIST_ID", "")
 # ---------------------------------------------------------------------------
 # Email (booking confirmations, reminders, cancellations — spec 5.6)
 # ---------------------------------------------------------------------------
-# Defaults to printing emails to the console — zero setup for local dev.
-# Set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend and the
-# Configuration SMTP Brevo directe avec valeurs par défaut
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+# Defaults to actually sending via Brevo's SMTP relay (EMAIL_HOST below) —
+# override with EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
+# locally if you don't have EMAIL_HOST_USER/EMAIL_HOST_PASSWORD set yet and
+# just want emails printed to the terminal instead of failing to send.
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND') or 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.getenv('EMAIL_HOST') or 'smtp-relay.brevo.com'
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = True
