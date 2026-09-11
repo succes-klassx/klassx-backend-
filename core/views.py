@@ -970,21 +970,6 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         except discounts.InvalidPromoCode as exc:
             return Response({"detail": str(exc), "code": "invalid_promo_code"}, status=status.HTTP_400_BAD_REQUEST)
 
-        if enrollment.student.country == "Tunisie":
-            # Pas de compte marchand Konnect confirmé — paiement 100%
-            # manuel pour la Tunisie (virement bancaire direct, aucun
-            # intermédiaire). L'élève contacte l'admin par e-mail, qui lui
-            # communique le RIB, puis approuve manuellement une fois reçu
-            # (voir EnrollmentAdmin.mark_paid_bank_transfer).
-            return Response(
-                {"detail": "Le paiement en ligne n'est pas disponible pour la Tunisie. "
-                           f"Contactez-nous à {settings.CONTACT_EMAIL} pour connaître les modalités "
-                           "de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL},
-                status=status.HTTP_200_OK,
-            )
-
         try:
             checkout_session = payments.create_enrollment_checkout_session(enrollment, amount_cents)
         except Exception as exc:
@@ -1068,22 +1053,6 @@ class IndividualBookingView(APIView):
         )
         enrollment = Enrollment.objects.create(student=request.user, class_session=session)
         notifications.send_enrollment_confirmed(enrollment)
-
-        if request.user.country == "Tunisie":
-            # Voir le même commentaire dans EnrollmentViewSet.create_checkout_session
-            # — pas d'intermédiaire de paiement pour la Tunisie, l'élève
-            # contacte l'admin par e-mail. La réservation (enrollment) est
-            # déjà créée ci-dessus, en attente de paiement (PENDING) —
-            # l'admin l'approuve manuellement une fois le virement reçu.
-            return Response(
-                {"detail": "Votre réservation est enregistrée. Le paiement en ligne n'est pas disponible "
-                           f"pour la Tunisie : contactez-nous à {settings.CONTACT_EMAIL} pour connaître les "
-                           "modalités de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL,
-                 "enrollment": EnrollmentSerializer(enrollment).data},
-                status=status.HTTP_201_CREATED,
-            )
 
         amount_cents = session_price_cents(session)
         try:
@@ -1605,17 +1574,6 @@ class SeriesMembershipViewSet(viewsets.ReadOnlyModelViewSet):
                  "code": "parental_consent_required"},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if membership.student.country == "Tunisie":
-            # Voir le même commentaire dans EnrollmentViewSet.create_checkout_session.
-            return Response(
-                {"detail": "Le paiement en ligne n'est pas disponible pour la Tunisie. "
-                           f"Contactez-nous à {settings.CONTACT_EMAIL} pour connaître les modalités "
-                           "de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL},
-                status=status.HTTP_200_OK,
-            )
-
         # Seul le rabais global s'applique ici (pas de code promo — voir
         # payments.create_series_subscription_checkout_session).
         amount_cents, _ = discounts.apply_discounts(membership.monthly_price_cents)
@@ -2064,31 +2022,6 @@ class SubscriptionCheckoutView(APIView):
         if already_active:
             return Response({"detail": f"Vous êtes déjà abonné à « {plan.name} »."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if request.user.country == "Tunisie":
-            # Même principe que EnrollmentViewSet.create_checkout_session :
-            # pas d'intermédiaire de paiement tunisien fiable pour
-            # l'instant, l'élève contacte l'admin par e-mail, qui approuve
-            # manuellement dans l'admin Django une fois le virement reçu
-            # (voir SelfStudySubscriptionAdmin.mark_paid_bank_transfer).
-            # get_or_create (pas juste create) : la contrainte unique
-            # (user, plan) rejetterait un second clic sur "S'abonner" sans
-            # ça. status=EXPIRED + current_period_end déjà passée = ne
-            # compte jamais comme actif (voir get_is_subscribed) tant que
-            # l'admin n'a pas validé le virement — sert juste de repère
-            # pour que l'admin retrouve la demande dans la liste.
-            Subscription.objects.get_or_create(
-                user=request.user, plan=plan,
-                defaults={"status": Subscription.Status.EXPIRED, "current_period_end": timezone.now()},
-            )
-            return Response(
-                {"detail": "Le paiement en ligne n'est pas disponible pour la Tunisie. "
-                           f"Contactez-nous à {settings.CONTACT_EMAIL} pour connaître les modalités "
-                           "de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL},
-                status=status.HTTP_200_OK,
-            )
-
         try:
             amount_cents, promo = discounts.apply_discounts(plan.price_cents, request.data.get("promo_code"))
         except discounts.InvalidPromoCode as exc:
@@ -2419,16 +2352,6 @@ class PackCheckoutView(APIView):
         pack = get_object_or_404(Pack, pk=pk, is_active=True)
         purchase = PackPurchase.objects.create(pack=pack, student=request.user, hours_remaining=pack.total_hours)
 
-        if request.user.country == "Tunisie":
-            return Response(
-                {"detail": "Votre demande est enregistrée. Le paiement en ligne n'est pas disponible "
-                           f"pour la Tunisie : contactez-nous à {settings.CONTACT_EMAIL} pour connaître les "
-                           "modalités de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL},
-                status=status.HTTP_201_CREATED,
-            )
-
         try:
             checkout_session = payments.create_pack_checkout_session(purchase)
         except Exception:
@@ -2465,16 +2388,6 @@ class ChatTutoringCheckoutView(APIView):
             return Response({"detail": "Vous êtes déjà abonné à ce service."}, status=status.HTTP_400_BAD_REQUEST)
         subscription.status = ChatTutoringSubscription.Status.PENDING
         subscription.save(update_fields=["status"])
-
-        if request.user.country == "Tunisie":
-            return Response(
-                {"detail": "Votre demande est enregistrée. Le paiement en ligne n'est pas disponible "
-                           f"pour la Tunisie : contactez-nous à {settings.CONTACT_EMAIL} pour connaître les "
-                           "modalités de paiement par virement bancaire.",
-                 "code": "payment_by_email_tunisia",
-                 "contact_email": settings.CONTACT_EMAIL},
-                status=status.HTTP_201_CREATED,
-            )
 
         try:
             checkout_session = payments.create_chat_tutoring_checkout_session(subscription)
