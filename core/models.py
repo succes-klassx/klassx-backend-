@@ -427,6 +427,16 @@ class Subject(models.Model):
         # plafond de 2 spécialités en Terminale — voir
         # StudentProfile.terminale_math_option.
         MATH_OPTION = "math_option", "Option mathématiques (Terminale)"
+        # Enseignement optionnel "classique" (LV3, Arts, Droit et grands
+        # enjeux du monde contemporain, EPS complémentaire...) — distinct
+        # de MATH_OPTION ci-dessus, qui ne concerne que les 2 options
+        # spécifiques aux mathématiques en Terminale. Comme SPECIALTY et
+        # MATH_OPTION, n'est pertinent qu'en Bac Général. Traité comme
+        # COMMON_CORE côté validate_specialty_access (voir serializers.py)
+        # — ouvert à tout élève, sans vérification sur son profil — car
+        # rien ne suit encore les enseignements optionnels choisis par
+        # élève (à la différence des spécialités et de l'option maths).
+        OPTIONAL = "optional", "Enseignement optionnel"
 
     name = models.CharField(max_length=100)
     code = models.SlugField(max_length=30, unique=True)
@@ -575,7 +585,23 @@ class SelfStudyContentItem(models.Model):
     order_index = models.PositiveIntegerField(default=0)
     # Vidéo : ID/URL chez le prestataire de streaming (ex: Cloudflare
     # Stream UID) — même convention que l'ancien VideoCapsule.
+    # Historique : lien/ID vers une vidéo hébergée chez un prestataire
+    # externe (YouTube, Cloudflare Stream...). N'est plus utilisé pour le
+    # nouveau contenu depuis la décision de tout héberger en interne (les
+    # élèves paient un abonnement, le contenu doit rester sur KLASSX, pas
+    # renvoyer vers un lien externe) — gardé uniquement pour ne pas casser
+    # d'éventuel contenu existant qui l'utilise encore. Toute nouvelle
+    # vidéo doit utiliser `video_file` ci-dessous.
     video_provider_id = models.CharField(max_length=200, blank=True)
+    # Fichier vidéo uploadé directement (même principe que pdf_file) —
+    # servi tel quel depuis MEDIA_ROOT/MEDIA_URL, lu avec une balise
+    # <video> native dans le tableau de bord élève (voir
+    # SelfStudyContentViewSet.playback_url et pages/VideoCapsules.jsx
+    # côté frontend). Attention : convient à des vidéos de taille
+    # raisonnable — pas de découpage HLS/streaming adaptatif ici, un vrai
+    # CDN vidéo serait nécessaire pour de gros volumes ou une bande
+    # passante limitée côté élève.
+    video_file = models.FileField(upload_to="selfstudy_videos/%Y/%m/", blank=True)
     duration_seconds = models.PositiveIntegerField(null=True, blank=True)
     # PDF : fichier uploadé directement (voir MEDIA_ROOT/MEDIA_URL).
     pdf_file = models.FileField(upload_to="selfstudy_pdfs/%Y/%m/", blank=True)

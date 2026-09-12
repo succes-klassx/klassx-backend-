@@ -571,7 +571,7 @@ class TeacherSelfStudyContentItemSerializer(serializers.ModelSerializer):
         model = SelfStudyContentItem
         fields = [
             "id", "plan", "plan_name", "content_type", "title", "description", "chapter_name",
-            "month", "order_index", "duration_seconds", "video_provider_id", "pdf_file",
+            "month", "order_index", "duration_seconds", "video_file", "pdf_file",
             "status", "is_unlocked",
         ]
 
