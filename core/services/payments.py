@@ -123,12 +123,15 @@ def create_enrollment_checkout_session(enrollment, unit_amount_cents, currency="
     return session
 
 
-def create_pack_checkout_session(purchase, currency="eur"):
+def create_pack_checkout_session(purchase, currency="eur", unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a multi-subject Pack purchase
     (see models.Pack/PackPurchase) — same one-time "payment" mode as
     create_enrollment_checkout_session, just for a bundled price instead
     of a single session.
+
+    `unit_amount_cents_override`: pass a discounted amount (see
+    core/discounts.py) to charge that instead of pack.price_cents as-is.
     """
     session = stripe.checkout.Session.create(
         mode="payment",
@@ -137,7 +140,7 @@ def create_pack_checkout_session(purchase, currency="eur"):
         line_items=[{
             "price_data": {
                 "currency": currency,
-                "unit_amount": purchase.pack.price_cents,
+                "unit_amount": unit_amount_cents_override if unit_amount_cents_override is not None else purchase.pack.price_cents,
                 "product_data": {"name": f"KLASSX — {purchase.pack.name}"},
             },
             "quantity": 1,
@@ -184,12 +187,15 @@ def create_subscription_checkout_session(user, plan, unit_amount_cents_override=
     return session
 
 
-def create_chat_tutoring_checkout_session(subscription):
+def create_chat_tutoring_checkout_session(subscription, unit_amount_cents_override=None):
     """
     Creates a Stripe Checkout Session for a chat-tutoring subscription
     (see models.ChatTutoringPlan/ChatTutoringSubscription) — same monthly
     recurring pattern as create_subscription_checkout_session above,
     billed on `subscription.plan.price_cents`.
+
+    `unit_amount_cents_override`: pass a discounted amount (see
+    core/discounts.py) to charge that instead of plan.price_cents as-is.
 
     Confirmed asynchronously by the checkout.session.completed webhook via
     metadata kind="chat_subscription" (see
@@ -205,7 +211,7 @@ def create_chat_tutoring_checkout_session(subscription):
         line_items=[{
             "price_data": {
                 "currency": "eur",
-                "unit_amount": plan.price_cents,
+                "unit_amount": unit_amount_cents_override if unit_amount_cents_override is not None else plan.price_cents,
                 "recurring": {"interval": "month"},
                 "product_data": {"name": f"KLASSX — {plan.name}"},
             },

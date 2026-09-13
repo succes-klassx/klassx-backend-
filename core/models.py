@@ -1678,8 +1678,9 @@ class GlobalDiscount(models.Model):
 
 class PromoCode(models.Model):
     """
-    Code promo qu'un élève tape lui-même au moment de payer une
-    réservation individuelle ou un abonnement contenu autonome. Se
+    Code promo qu'un élève tape lui-même au moment de payer — une
+    réservation individuelle, un abonnement contenu autonome, un
+    forfait de groupe, un pack, ou un abonnement chat enseignant. Se
     cumule avec le rabais global s'il y en a un actif — voir
     core/discounts.py: apply_discounts(). L'utilisation (`times_used`)
     n'est comptée que si le code a bien été appliqué à un paiement créé
@@ -1687,6 +1688,16 @@ class PromoCode(models.Model):
     """
     code = models.CharField(max_length=32, unique=True)
     percentage = models.PositiveSmallIntegerField(help_text="1 à 100.")
+    # Laisser vide = valable sur toutes les matières et tous les forfaits.
+    # Si renseigné, le code n'est accepté que pour un achat portant sur
+    # CETTE matière précise (cours, forfait de groupe, abonnement libre-
+    # service, chat enseignant...) ; pour un Pack (qui couvre plusieurs
+    # matières à la fois), il suffit que cette matière fasse partie du
+    # pack — voir discounts.get_valid_promo_code().
+    subject = models.ForeignKey(
+        Subject, on_delete=models.CASCADE, null=True, blank=True, related_name="promo_codes",
+        help_text="Laisser vide pour un code valable sur toutes les matières.",
+    )
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True, help_text="Laisser vide pour ne jamais expirer.")
     max_uses = models.PositiveIntegerField(null=True, blank=True, help_text="Laisser vide pour un nombre illimité d'utilisations.")

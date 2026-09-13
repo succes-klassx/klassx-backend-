@@ -577,8 +577,8 @@ class GlobalDiscountAdmin(admin.ModelAdmin):
 
 @admin.register(PromoCode)
 class PromoCodeAdmin(admin.ModelAdmin):
-    """Codes promo que les élèves tapent eux-mêmes au paiement (réservation individuelle, contenu autonome)."""
-    list_display = ["code", "percentage", "is_active", "expires_at", "max_uses", "times_used"]
-    list_filter = ["is_active"]
+    """Codes promo que les élèves tapent eux-mêmes au paiement — réservation, forfait de groupe, pack, contenu autonome, chat enseignant."""
+    list_display = ["code", "subject", "percentage", "is_active", "expires_at", "max_uses", "times_used"]
+    list_filter = ["is_active", "subject"]
     search_fields = ["code"]
     readonly_fields = ["times_used", "created_at"]

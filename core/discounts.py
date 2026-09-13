@@ -29,11 +29,20 @@ def get_global_discount_percent():
     return 0
 
 
-def get_valid_promo_code(code):
+def get_valid_promo_code(code, subjects=None):
     """
     Renvoie l'objet PromoCode si `code` est valide (existe, actif, pas
-    expiré, pas épuisé). Renvoie None si `code` est vide/None — un code
-    promo est toujours facultatif. Lève InvalidPromoCode sinon.
+    expiré, pas épuisé, et — si le code est restreint à une matière —
+    que cet achat porte bien sur cette matière). Renvoie None si `code`
+    est vide/None — un code promo est toujours facultatif. Lève
+    InvalidPromoCode sinon.
+
+    `subjects` : la ou les matières concernées par cet achat précis —
+    un seul Subject, une liste/queryset de Subject (utile pour un Pack,
+    qui couvre plusieurs matières à la fois), ou None si l'appelant ne
+    sait pas encore (dans ce cas, un code restreint à une matière sera
+    toujours refusé, par sécurité — mieux vaut un refus visible qu'une
+    restriction ignorée en silence).
     """
     if not code:
         return None
@@ -47,19 +56,29 @@ def get_valid_promo_code(code):
         raise InvalidPromoCode("Ce code promo a expiré.")
     if promo.max_uses is not None and promo.times_used >= promo.max_uses:
         raise InvalidPromoCode("Ce code promo a atteint son nombre maximal d'utilisations.")
+    if promo.subject_id is not None:
+        if subjects is None:
+            allowed_ids = set()
+        elif hasattr(subjects, "__iter__"):
+            allowed_ids = {s.id for s in subjects}
+        else:
+            allowed_ids = {subjects.id}
+        if promo.subject_id not in allowed_ids:
+            raise InvalidPromoCode(f"Ce code promo n'est valable que pour la matière « {promo.subject.name} ».")
     return promo
 
 
-def apply_discounts(cents, promo_code_str=None):
+def apply_discounts(cents, promo_code_str=None, subjects=None):
     """
     Applique le rabais global (s'il est actif) et le code promo (s'il
-    est fourni et valide) à un montant en centimes. Renvoie
-    (montant_final_cents, promo_ou_None). Lève InvalidPromoCode si un
-    code a été fourni mais n'est pas valide — à l'appelant de renvoyer
-    ça clairement à l'élève plutôt que d'ignorer silencieusement le code
-    ou de n'appliquer que le rabais global.
+    est fourni et valide pour la/les matière(s) de cet achat — voir
+    `subjects` sur get_valid_promo_code) à un montant en centimes.
+    Renvoie (montant_final_cents, promo_ou_None). Lève InvalidPromoCode
+    si un code a été fourni mais n'est pas valide — à l'appelant de
+    renvoyer ça clairement à l'élève plutôt que d'ignorer silencieusement
+    le code ou de n'appliquer que le rabais global.
     """
-    promo = get_valid_promo_code(promo_code_str)
+    promo = get_valid_promo_code(promo_code_str, subjects=subjects)
     factor = 1.0
     global_pct = get_global_discount_percent()
     if global_pct:
