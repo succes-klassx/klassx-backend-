@@ -6,7 +6,7 @@ import logging
 
 from .models import (
     BlogPost, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription, ClassSeries, ClassSession, Pack, PackPurchase, PromoVideo, Enrollment, FAQ, ForumReply, ForumThread,
-    GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent, Payment,
+    GlobalDiscount, GroupAnnouncement, GroupAssignment, GroupRequest, InfoSessionSignup, Material, NewsletterSubscriber, ParentalConsent, Payment,
     Payout, PricingRate, PromoCode, ReferralCommission, SeriesMembership, StaticPage,
     SelfStudyContentItem, SelfStudyPlan, StudentProfile, Subject, Subscription, TeacherAvailability, TeacherProfile,
     TeacherSubject, User, VideoProgress,
@@ -554,6 +554,16 @@ class NewsletterSubscriberAdmin(admin.ModelAdmin):
     ordering = ["-subscribed_at"]
 
 
+@admin.register(InfoSessionSignup)
+class InfoSessionSignupAdmin(admin.ModelAdmin):
+    """Inscrits aux séances d'information gratuites — voir aussi Brevo, et l'email de notification envoyé à CONTACT_EMAIL à chaque inscription."""
+    list_display = ["name", "email", "session_date", "created_at", "synced_to_brevo"]
+    list_filter = ["session_date", "synced_to_brevo"]
+    search_fields = ["name", "email"]
+    readonly_fields = ["created_at"]
+    ordering = ["-created_at"]
+
+
 @admin.register(GlobalDiscount)
 class GlobalDiscountAdmin(admin.ModelAdmin):
     """
@@ -578,7 +588,13 @@ class GlobalDiscountAdmin(admin.ModelAdmin):
 @admin.register(PromoCode)
 class PromoCodeAdmin(admin.ModelAdmin):
     """Codes promo que les élèves tapent eux-mêmes au paiement — réservation, forfait de groupe, pack, contenu autonome, chat enseignant."""
-    list_display = ["code", "subject", "percentage", "is_active", "expires_at", "max_uses", "times_used"]
-    list_filter = ["is_active", "subject"]
+    list_display = ["code", "subjects_display", "percentage", "is_active", "expires_at", "max_uses", "times_used"]
+    list_filter = ["is_active", "subjects"]
     search_fields = ["code"]
     readonly_fields = ["times_used", "created_at"]
+    filter_horizontal = ["subjects"]
+
+    @admin.display(description="Matières")
+    def subjects_display(self, obj):
+        names = list(obj.subjects.values_list("name", flat=True))
+        return ", ".join(names) if names else "Toutes"

@@ -254,3 +254,39 @@ def send_student_welcome(user):
         # échouer l'inscription elle-même — juste finir dans les logs.
         logger.exception("Échec de l'envoi de l'email de bienvenue à %s", user.email)
 
+
+def send_admin_new_student(user):
+    """
+    Notifie l'admin (settings.CONTACT_EMAIL) qu'un nouvel élève vient de
+    s'inscrire — voir views.RegisterView.perform_create. Best-effort,
+    comme send_student_welcome : un souci d'envoi ne doit jamais faire
+    échouer l'inscription elle-même.
+    """
+    try:
+        send_brevo_email(
+            settings.CONTACT_EMAIL,
+            f"Nouvel élève inscrit — {user.first_name} {user.last_name}",
+            f"<p>{user.first_name} {user.last_name} ({user.email}) vient de créer un compte élève sur KLASSX.</p>",
+        )
+    except Exception:
+        logger.exception("Échec de l'email de notification admin (nouvel élève: %s)", user.email)
+
+
+def send_admin_pack_purchase(purchase):
+    """
+    Notifie l'admin qu'un forfait vient d'être payé avec succès — voir
+    views.StripeWebhookView._confirm_pack_purchase et
+    views.KonnectWebhookView (paiement confirmé côté serveur, donc fiable
+    — jamais juste sur la redirection success_url, voir le webhook).
+    """
+    student = purchase.student
+    try:
+        send_brevo_email(
+            settings.CONTACT_EMAIL,
+            f"Nouveau forfait payé — {student.first_name} {student.last_name}",
+            f"<p>{student.first_name} {student.last_name} ({student.email}) vient de payer le forfait "
+            f"« {purchase.pack.name} » ({purchase.pack.price_cents / 100:.2f}€).</p>",
+        )
+    except Exception:
+        logger.exception("Échec de l'email de notification admin (achat forfait: %s)", student.email)
+

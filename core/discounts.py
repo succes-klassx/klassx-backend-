@@ -56,15 +56,17 @@ def get_valid_promo_code(code, subjects=None):
         raise InvalidPromoCode("Ce code promo a expiré.")
     if promo.max_uses is not None and promo.times_used >= promo.max_uses:
         raise InvalidPromoCode("Ce code promo a atteint son nombre maximal d'utilisations.")
-    if promo.subject_id is not None:
+    if promo.subjects.exists():
         if subjects is None:
             allowed_ids = set()
         elif hasattr(subjects, "__iter__"):
             allowed_ids = {s.id for s in subjects}
         else:
             allowed_ids = {subjects.id}
-        if promo.subject_id not in allowed_ids:
-            raise InvalidPromoCode(f"Ce code promo n'est valable que pour la matière « {promo.subject.name} ».")
+        promo_subject_ids = set(promo.subjects.values_list("id", flat=True))
+        if not (allowed_ids & promo_subject_ids):
+            names = ", ".join(promo.subjects.values_list("name", flat=True))
+            raise InvalidPromoCode(f"Ce code promo n'est valable que pour : {names}.")
     return promo
 
 

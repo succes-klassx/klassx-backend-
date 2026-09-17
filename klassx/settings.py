@@ -237,6 +237,7 @@ REST_FRAMEWORK = {
         "register": "10/hour",
         "password_reset": "5/hour",
         "newsletter": "20/hour",
+        "info-session": "20/hour",
     },
 }
 

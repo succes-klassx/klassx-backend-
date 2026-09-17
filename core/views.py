@@ -34,7 +34,7 @@ from .utils import send_brevo_email
 from .models import (
     BlogPost, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription,
     ClassSeries, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
-    GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, Payment,
+    GroupAnnouncement, GroupAssignment, GroupRequest, InfoSessionSignup, Material, NewsletterSubscriber, Payment,
     Pack, PackPurchase, PromoVideo, ReferralCommission, SeriesMembership, StaticPage, Subject, Subscription,
     SelfStudyContentItem, SelfStudyPlan, TeacherProfile, VideoProgress, WhiteboardSnapshot,
 )
@@ -44,7 +44,7 @@ from .serializers import (
     ChatMessageSerializer, ChatTutoringPlanSerializer, ChatTutoringSubscriptionSerializer,
     ClassSessionSerializer, EnrollmentSerializer, FAQSerializer,
     ForumReplySerializer, ForumThreadSerializer, GroupAnnouncementSerializer,
-    GroupAssignmentSerializer, GroupRequestSerializer,
+    GroupAssignmentSerializer, GroupRequestSerializer, InfoSessionSignupSerializer,
     IndividualBookingSerializer, MaterialSerializer, NewsletterSubscriberSerializer, PackSerializer, PromoVideoSerializer, PublicTeacherDetailSerializer, PublicTeacherSerializer,
     SeriesMembershipSerializer, StaticPageSerializer, StudentRegistrationSerializer,
     StudentSpecialtiesUpdateSerializer, SubjectSerializer,
@@ -98,6 +98,7 @@ class RegisterView(generics.CreateAPIView):
         # souci d'envoi (SMTP mal configuré, Brevo indisponible...) ne doit
         # jamais faire échouer l'inscription elle-même (voir _send).
         notifications.send_student_welcome(user)
+        notifications.send_admin_new_student(user)
 
 
 class TeacherRegisterView(generics.CreateAPIView):
@@ -2133,6 +2134,7 @@ class StripeWebhookView(APIView):
             return
         purchase.status = PackPurchase.Status.PAID
         purchase.save(update_fields=["status"])
+        notifications.send_admin_pack_purchase(purchase)
 
     @staticmethod
     def _save_default_payment_method(student_profile_id, stripe_session):
@@ -2625,6 +2627,49 @@ class PublicNewsletterSubscribeView(APIView):
                 logger.exception("Échec de la synchronisation Brevo pour %s", email)
 
         return Response({"email": email}, status=status.HTTP_201_CREATED)
+
+
+class PublicInfoSessionSignupView(APIView):
+    """
+    POST /api/public/seance-info/ — {"name": "...", "email": "...",
+    "session_date": "YYYY-MM-DD"} — inscription à une séance
+    d'information gratuite, depuis la page dédiée (klassx.cloud/seance-info)
+    ou depuis la bannière de la page d'accueil.
+
+    Même logique que PublicNewsletterSubscribeView : enregistré
+    localement en premier (InfoSessionSignup), puis poussé vers Brevo en
+    best-effort — un souci Brevo ne fait jamais échouer l'inscription
+    côté visiteur.
+    """
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "info-session"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request):
+        serializer = InfoSessionSignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        signup = serializer.save()
+
+        try:
+            brevo.add_contact(signup.email)
+            signup.synced_to_brevo = True
+            signup.save(update_fields=["synced_to_brevo"])
+        except brevo.BrevoError:
+            logger.exception("Échec de la synchronisation Brevo pour %s (séance info)", signup.email)
+
+        try:
+            send_brevo_email(
+                settings.CONTACT_EMAIL,
+                f"Nouvelle inscription séance info — {signup.name}",
+                f"<p>{signup.name} ({signup.email}) vient de s'inscrire à la séance du {signup.session_date}.</p>",
+            )
+        except Exception:
+            logger.exception("Échec de l'email de notification admin pour l'inscription de %s", signup.email)
+
+        return Response(
+            {"name": signup.name, "email": signup.email, "session_date": signup.session_date},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class PublicValidatePromoCodeView(APIView):

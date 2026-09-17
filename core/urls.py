@@ -56,6 +56,7 @@ urlpatterns = [
     path("me/teacher-chat-subscriptions/", views.MyTeacherChatSubscriptionsView.as_view(), name="me-teacher-chat-subscriptions"),
     path("chat-subscriptions/<int:pk>/messages/", views.ChatThreadMessagesView.as_view(), name="chat-subscription-messages"),
     path("public/newsletter/", views.PublicNewsletterSubscribeView.as_view(), name="public-newsletter"),
+    path("public/seance-info/", views.PublicInfoSessionSignupView.as_view(), name="public-info-session"),
 
     # Teacher self-service settings (autonomous scheduling model) — must
     # come before the router include, so "me" isn't swallowed by the

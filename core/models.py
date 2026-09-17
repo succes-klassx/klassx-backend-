@@ -1656,6 +1656,27 @@ class NewsletterSubscriber(models.Model):
         return self.email
 
 
+class InfoSessionSignup(models.Model):
+    """
+    Inscription à une séance d'information gratuite (voir
+    PublicInfoSessionSignupView) — collectée depuis la page dédiée
+    (klassx.cloud/seance-info) et/ou depuis la bannière de la page
+    d'accueil. Même logique que NewsletterSubscriber : enregistré
+    localement en premier, poussé vers Brevo en best-effort.
+    """
+    name = models.CharField(max_length=200)
+    email = models.EmailField()
+    session_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    synced_to_brevo = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} <{self.email}> — séance du {self.session_date}"
+
+
 class GlobalDiscount(models.Model):
     """
     Rabais en pourcentage appliqué à TOUS les forfaits (groupe,
@@ -1688,15 +1709,15 @@ class PromoCode(models.Model):
     """
     code = models.CharField(max_length=32, unique=True)
     percentage = models.PositiveSmallIntegerField(help_text="1 à 100.")
-    # Laisser vide = valable sur toutes les matières et tous les forfaits.
-    # Si renseigné, le code n'est accepté que pour un achat portant sur
-    # CETTE matière précise (cours, forfait de groupe, abonnement libre-
-    # service, chat enseignant...) ; pour un Pack (qui couvre plusieurs
-    # matières à la fois), il suffit que cette matière fasse partie du
-    # pack — voir discounts.get_valid_promo_code().
-    subject = models.ForeignKey(
-        Subject, on_delete=models.CASCADE, null=True, blank=True, related_name="promo_codes",
-        help_text="Laisser vide pour un code valable sur toutes les matières.",
+    # Vide = valable sur toutes les matières et tous les forfaits. Sinon,
+    # le code n'est accepté que si l'achat porte sur au moins une des
+    # matières sélectionnées ici (ex: Maths + Espagnol) ; pour un Pack
+    # (qui couvre plusieurs matières à la fois), il suffit qu'UNE des
+    # matières du pack fasse partie de cette liste — voir
+    # discounts.get_valid_promo_code().
+    subjects = models.ManyToManyField(
+        Subject, blank=True, related_name="promo_codes",
+        help_text="Laisser vide pour un code valable sur toutes les matières. Sélectionner une ou plusieurs matières pour restreindre le code à celles-ci.",
     )
     is_active = models.BooleanField(default=True)
     expires_at = models.DateTimeField(null=True, blank=True, help_text="Laisser vide pour ne jamais expirer.")

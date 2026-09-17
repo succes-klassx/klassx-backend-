@@ -10,7 +10,7 @@ from rest_framework import serializers
 
 from .models import (
     BacType, BlogPost, CecrlLevel, ChatMessage, ChatThread, ChatTutoringPlan, ChatTutoringSubscription, Pack, PromoVideo, ClassSession, Enrollment, FAQ, ForumReply, ForumThread,
-    GroupAnnouncement, GroupAssignment, GroupRequest, Material, NewsletterSubscriber, ParentalConsent,
+    GroupAnnouncement, GroupAssignment, GroupRequest, InfoSessionSignup, Material, NewsletterSubscriber, ParentalConsent,
     SeriesMembership, StaticPage, StudentProfile, Subject, TeacherProfile,
     SelfStudyContentItem, SelfStudyPlan, Subscription, TeacherSubject, VideoProgress,
 )
@@ -1087,3 +1087,9 @@ class NewsletterSubscriberSerializer(serializers.ModelSerializer):
     class Meta:
         model = NewsletterSubscriber
         fields = ["email"]
+
+
+class InfoSessionSignupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InfoSessionSignup
+        fields = ["name", "email", "session_date"]
