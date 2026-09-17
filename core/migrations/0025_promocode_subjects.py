@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="promocode",
             name="subjects",
-            field=models.ManyToManyField(blank=True, related_name="promo_codes", to="core.subject"),
+            field=models.ManyToManyField(blank=True, to="core.subject"),
         ),
         migrations.RunPython(copy_subject_to_subjects, noop_reverse),
         migrations.RemoveField(
