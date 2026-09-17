@@ -13,8 +13,4 @@ class Migration(migrations.Migration):
             name="subjects",
             field=models.ManyToManyField(blank=True, to="core.subject"),
         ),
-        migrations.RemoveField(
-            model_name="promocode",
-            name="subject",
-        ),
     ]
