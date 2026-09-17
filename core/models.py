@@ -1716,7 +1716,7 @@ class PromoCode(models.Model):
     # matières du pack fasse partie de cette liste — voir
     # discounts.get_valid_promo_code().
     subjects = models.ManyToManyField(
-        Subject, blank=True, related_name="promo_codes",
+        Subject, blank=True,
         help_text="Laisser vide pour un code valable sur toutes les matières. Sélectionner une ou plusieurs matières pour restreindre le code à celles-ci.",
     )
     is_active = models.BooleanField(default=True)
